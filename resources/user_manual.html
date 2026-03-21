@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body   { font-family: 'Segoe UI', Arial, sans-serif; font-size: 10pt;
+           color: #1a1a1a; margin: 16px 20px; }
+  h1     { font-size: 15pt; color: #1a3a5c; border-bottom: 2px solid #1a3a5c;
+           padding-bottom: 4px; margin-top: 0; }
+  h2     { font-size: 12pt; color: #1a3a5c; margin-top: 22px;
+           margin-bottom: 4px; border-left: 4px solid #2e7bcf;
+           padding-left: 8px; }
+  h3     { font-size: 10.5pt; color: #2e4a6a; margin-top: 14px;
+           margin-bottom: 3px; }
+  p      { margin: 4px 0 8px 0; line-height: 1.5; }
+  table  { border-collapse: collapse; width: 100%; margin: 6px 0 14px 0; }
+  th     { background: #1a3a5c; color: #fff; padding: 6px 10px;
+           text-align: left; font-size: 10pt; }
+  td     { padding: 5px 10px; border-bottom: 1px solid #dde; }
+  tr:nth-child(even) td { background: #eef3fa; }
+  kbd    { background: #e8e8e8; border: 1px solid #aaa; border-radius: 4px;
+           padding: 1px 6px; font-family: monospace; font-size: 9.5pt;
+           color: #222; white-space: nowrap; }
+  code   { background: #f0f0f0; border-radius: 3px; padding: 1px 5px;
+           font-family: monospace; font-size: 9.5pt; }
+  .note  { background: #fff8dc; border-left: 4px solid #f0c040;
+           padding: 6px 12px; margin: 8px 0; font-size: 9.5pt; }
+  .tip   { background: #e8f5e9; border-left: 4px solid #43a047;
+           padding: 6px 12px; margin: 8px 0; font-size: 9.5pt; }
+  .warn  { background: #fdecea; border-left: 4px solid #e53935;
+           padding: 6px 12px; margin: 8px 0; font-size: 9.5pt; }
+  .debit  { color: #1b5e20; font-weight: bold; }
+  .credit { color: #b71c1c; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>ESQ Accounting System &mdash; User Manual</h1>
+<p>Welcome to the <b>ESQ Accounting System</b>. This manual describes every
+module, its purpose, all available keyboard shortcuts, and the account code
+structure used throughout the system.</p>
+
+<!-- =================================================================== -->
+<h2>1. Application Layout</h2>
+<p>The system is organised as a <b>tabbed interface</b>. Each tab corresponds
+to one accounting module. The tabs are, in order:</p>
+<table>
+  <tr><th>#</th><th>Tab Name</th><th>Quick-jump Shortcut</th></tr>
+  <tr><td>1</td><td>Chart of Accounts</td><td><kbd>Ctrl+1</kbd></td></tr>
+  <tr><td>2</td><td>Alphalist</td><td><kbd>Ctrl+2</kbd></td></tr>
+  <tr><td>3</td><td>Sales Journal</td><td><kbd>Ctrl+3</kbd></td></tr>
+  <tr><td>4</td><td>Purchase Journal</td><td><kbd>Ctrl+4</kbd></td></tr>
+  <tr><td>5</td><td>Cash Disbursement</td><td><kbd>Ctrl+5</kbd></td></tr>
+  <tr><td>6</td><td>Cash Receipts</td><td><kbd>Ctrl+6</kbd></td></tr>
+  <tr><td>7</td><td>General Journal</td><td><kbd>Ctrl+7</kbd></td></tr>
+  <tr><td>8</td><td>General Ledger</td><td><kbd>Ctrl+8</kbd></td></tr>
+  <tr><td>9</td><td>Trial Balance</td><td><kbd>Ctrl+9</kbd></td></tr>
+  <tr><td>10</td><td>Financial Statements</td><td><kbd>Ctrl+0</kbd></td></tr>
+</table>
+
+<!-- =================================================================== -->
+<h2>2. Account Code Structure</h2>
+<p>All account codes follow the format <code>ABC-Xxxx</code> where the first
+digit after the dash determines the account type. Understanding this structure
+is essential for correct journal entry posting and financial statement
+generation.</p>
+
+<h3>Account Type Prefixes</h3>
+<table>
+  <tr><th>Prefix</th><th>Account Type</th><th>Normal Balance</th><th>Appears In</th></tr>
+  <tr><td><code>ABC-1xxx</code></td><td>Assets</td><td><span class="debit">Debit</span></td><td>Balance Sheet</td></tr>
+  <tr><td><code>ABC-2xxx</code></td><td>Liabilities</td><td><span class="credit">Credit</span></td><td>Balance Sheet</td></tr>
+  <tr><td><code>ABC-3xxx</code></td><td>Equity</td><td><span class="credit">Credit</span> *</td><td>Balance Sheet</td></tr>
+  <tr><td><code>ABC-4xxx</code></td><td>Revenue</td><td><span class="credit">Credit</span></td><td>Income Statement</td></tr>
+  <tr><td><code>ABC-5xxx</code></td><td>Cost of Goods Sold</td><td><span class="debit">Debit</span></td><td>Income Statement</td></tr>
+  <tr><td><code>ABC-6xxx</code></td><td>Operating Expenses</td><td><span class="debit">Debit</span></td><td>Income Statement</td></tr>
+</table>
+<div class="note">* Equity accounts are <b>Credit-normal</b> except for <b>Drawings</b> and
+<b>Treasury Stock</b> accounts which are Debit-normal (they reduce equity).</div>
+
+<h3>Special Cases &mdash; Contra Accounts</h3>
+<p>Some accounts under <code>ABC-1xxx</code> are <b>Credit-normal</b> because they
+reduce the value of their parent asset. These are called <b>contra-asset</b> accounts:</p>
+<table>
+  <tr><th>Account Code</th><th>Description</th><th>Reduces</th></tr>
+  <tr><td><code>ABC-1611</code></td><td>Accum. Dep. - Communication Equipment</td><td>ABC-1610</td></tr>
+  <tr><td><code>ABC-1621</code></td><td>Accum. Dep. - Office Equipment</td><td>ABC-1620</td></tr>
+  <tr><td><code>ABC-1631</code></td><td>Accum. Dep. - Transportation Equipment</td><td>ABC-1630</td></tr>
+  <tr><td><code>ABC-1641</code></td><td>Accum. Dep. - Computer Equipment</td><td>ABC-1640</td></tr>
+  <tr><td><code>ABC-1651</code></td><td>Accum. Dep. - Furniture and Fixture</td><td>ABC-1650</td></tr>
+  <tr><td><code>ABC-1661</code></td><td>Accum. Dep. - Leasehold Improvement</td><td>ABC-1660</td></tr>
+  <tr><td><code>ABC-1671</code></td><td>Accum. Dep. - Computer Software</td><td>ABC-1670</td></tr>
+</table>
+<div class="tip">&#128161; The Normal Balance of each account is visible in the
+<b>Chart of Accounts</b> tab under the &ldquo;Normal Balance&rdquo; column.</div>
+
+<h3>Accounts Used Per Journal</h3>
+<table>
+  <tr><th>Journal</th><th>Accounts Involved</th><th>Auto-posted?</th></tr>
+  <tr>
+    <td>Sales Journal</td>
+    <td>
+      <span class="debit">DR</span> <code>ABC-1110</code> Accounts Receivable<br>
+      <span class="credit">CR</span> <code>ABC-4010</code> Sales &ndash; Goods<br>
+      <span class="credit">CR</span> <code>ABC-4020</code> Sales &ndash; Service<br>
+      <span class="credit">CR</span> <code>ABC-2110</code> Output VAT Payable
+    </td>
+    <td>Yes &mdash; all lines auto-posted</td>
+  </tr>
+  <tr>
+    <td>Purchase Journal</td>
+    <td>
+      <span class="debit">DR</span> <code>ABC-1320</code> Input VAT<br>
+      <span class="debit">DR</span> Any <code>ABC-5xxx</code> / <code>ABC-6xxx</code> / <code>ABC-1xxx</code> account<br>
+      <span class="credit">CR</span> <code>ABC-2010</code> Accounts Payable
+    </td>
+    <td>VAT &amp; AP auto-posted; debit account is user-selected</td>
+  </tr>
+  <tr>
+    <td>Cash Disbursement</td>
+    <td>
+      Typically <span class="debit">DR</span> <code>ABC-2xxx</code> (paying a payable) or <code>ABC-6xxx</code> (direct expense)<br>
+      Typically <span class="credit">CR</span> <code>ABC-1010</code> / <code>ABC-1020</code> Cash
+    </td>
+    <td>No &mdash; user enters all lines</td>
+  </tr>
+  <tr>
+    <td>Cash Receipts</td>
+    <td>
+      Typically <span class="debit">DR</span> <code>ABC-1010</code> / <code>ABC-1020</code> Cash<br>
+      Typically <span class="credit">CR</span> <code>ABC-1110</code> Accounts Receivable or <code>ABC-4xxx</code> Revenue
+    </td>
+    <td>No &mdash; user enters all lines</td>
+  </tr>
+  <tr>
+    <td>General Journal</td>
+    <td>Any account &mdash; used for depreciation, adjustments, closing entries, corrections</td>
+    <td>No &mdash; user enters all lines</td>
+  </tr>
+</table>
+
+<h3>Financial Statement Mapping</h3>
+<table>
+  <tr><th>Prefix</th><th>Statement</th><th>Section</th></tr>
+  <tr><td><code>ABC-1xxx</code></td><td>Balance Sheet</td><td>Assets</td></tr>
+  <tr><td><code>ABC-2xxx</code></td><td>Balance Sheet</td><td>Liabilities</td></tr>
+  <tr><td><code>ABC-3xxx</code></td><td>Balance Sheet</td><td>Equity (Owner's / Partners' / Stockholders')</td></tr>
+  <tr><td><code>ABC-4xxx</code></td><td>Income Statement</td><td>Revenue</td></tr>
+  <tr><td><code>ABC-5xxx</code></td><td>Income Statement</td><td>Cost of Goods Sold &rarr; Gross Profit</td></tr>
+  <tr><td><code>ABC-6xxx</code></td><td>Income Statement</td><td>Operating Expenses &rarr; Net Income</td></tr>
+</table>
+<div class="note">&#8505;&#65039; <b>Net Income</b> from the Income Statement flows automatically into the
+Balance Sheet under Equity. Do <b>not</b> create a separate equity account for
+current-year profit &mdash; this would cause double-counting.</div>
+
+<!-- =================================================================== -->
+<h2>3. Global Shortcuts</h2>
+<p>These shortcuts work from <b>any</b> tab at any time.</p>
+<table>
+  <tr><th>Shortcut</th><th>Action</th></tr>
+  <tr><td><kbd>F1</kbd></td><td>Open this User Manual</td></tr>
+  <tr><td><kbd>F5</kbd></td><td>Refresh / reload data in all tabs</td></tr>
+  <tr><td><kbd>Ctrl+Tab</kbd></td><td>Switch to the next tab (wraps around)</td></tr>
+  <tr><td><kbd>Ctrl+Shift+Tab</kbd></td><td>Switch to the previous tab (wraps around)</td></tr>
+  <tr><td><kbd>Ctrl+1</kbd> &hellip; <kbd>Ctrl+0</kbd></td><td>Jump directly to Tab 1&ndash;10</td></tr>
+  <tr><td><kbd>Ctrl+Shift+D</kbd></td><td>Toggle dark mode</td></tr>
+  <tr><td><kbd>Ctrl+Q</kbd></td><td>Quit the application</td></tr>
+</table>
+
+<!-- =================================================================== -->
+<h2>4. Chart of Accounts</h2>
+<p>Manage the master list of account codes and descriptions used across all
+journals. Each account has a <b>Normal Balance</b> (Debit or Credit) that
+drives correct balance calculation in the General Ledger and Financial Statements.</p>
+<table>
+  <tr><th>Shortcut</th><th>Action</th></tr>
+  <tr><td><kbd>Ctrl+N</kbd></td><td>Add a new account</td></tr>
+  <tr><td><kbd>Ctrl+E</kbd></td><td>Edit the selected account</td></tr>
+  <tr><td><kbd>Ctrl+D</kbd></td><td>Delete the selected account</td></tr>
+  <tr><td><kbd>Ctrl+F</kbd></td><td>Focus the search field</td></tr>
+</table>
+<div class="warn">&#9888;&#65039; <b>Delete All Accounts</b> and <b>Reset to Default</b> buttons are
+available for resetting the COA. Use with caution &mdash; these actions cannot be undone.</div>
+
+<!-- =================================================================== -->
+<h2>5. Alphalist</h2>
+<p>Maintain the list of customers and vendors (TIN, name, address, VAT type).
+This list is shared by other journals via auto-complete lookups.</p>
+<table>
+  <tr><th>Shortcut</th><th>Action</th></tr>
+  <tr><td><kbd>Ctrl+N</kbd></td><td>Add a new entry</td></tr>
+  <tr><td><kbd>Ctrl+E</kbd></td><td>Edit the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+Shift+C</kbd></td><td>Copy (duplicate) the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+D</kbd></td><td>Delete the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+F</kbd></td><td>Focus the search field</td></tr>
+  <tr><td><kbd>Ctrl+L</kbd></td><td>Toggle the List-Type filter</td></tr>
+  <tr><td><kbd>Ctrl+Shift+I</kbd></td><td>Import from Excel (.xlsx / .xls)</td></tr>
+  <tr><td><kbd>Ctrl+Shift+E</kbd></td><td>Export to Excel report (.xlsx)</td></tr>
+</table>
+
+<!-- =================================================================== -->
+<h2>6. Sales Journal</h2>
+<p>Record sales transactions. Each entry automatically computes Output VAT,
+posts to Accounts Receivable, and credits the appropriate Sales accounts.</p>
+<table>
+  <tr><th>Shortcut</th><th>Action</th></tr>
+  <tr><td><kbd>Ctrl+N</kbd></td><td>Add a new sales entry</td></tr>
+  <tr><td><kbd>Ctrl+E</kbd></td><td>Edit the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+Shift+C</kbd></td><td>Copy (duplicate) the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+D</kbd></td><td>Delete the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+F</kbd></td><td>Focus the search field</td></tr>
+  <tr><td><kbd>Ctrl+I</kbd></td><td>Import from Excel</td></tr>
+  <tr><td><kbd>Ctrl+Shift+E</kbd></td><td>Export to Excel</td></tr>
+</table>
+
+<!-- =================================================================== -->
+<h2>7. Purchase Journal</h2>
+<p>Record purchase transactions. Input VAT and Accounts Payable are posted
+automatically when an entry is saved.</p>
+<table>
+  <tr><th>Shortcut</th><th>Action</th></tr>
+  <tr><td><kbd>Ctrl+N</kbd></td><td>Add a new purchase entry</td></tr>
+  <tr><td><kbd>Ctrl+E</kbd></td><td>Edit the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+Shift+C</kbd></td><td>Copy (duplicate) the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+D</kbd></td><td>Delete the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+F</kbd></td><td>Focus the search field</td></tr>
+  <tr><td><kbd>Ctrl+I</kbd></td><td>Import from Excel</td></tr>
+  <tr><td><kbd>Ctrl+Shift+E</kbd></td><td>Export to Excel</td></tr>
+</table>
+
+<!-- =================================================================== -->
+<h2>8. Cash Disbursement</h2>
+<p>Record multi-line cash payments. Each voucher can have multiple account
+distribution lines. Double-click a row to view full line details.</p>
+<table>
+  <tr><th>Shortcut</th><th>Action</th></tr>
+  <tr><td><kbd>Ctrl+N</kbd></td><td>Add a new disbursement entry</td></tr>
+  <tr><td><kbd>Ctrl+E</kbd></td><td>Edit the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+Shift+C</kbd></td><td>Copy (duplicate) the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+V</kbd></td><td>View details of the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+D</kbd></td><td>Delete the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+F</kbd></td><td>Focus the search field</td></tr>
+  <tr><td><kbd>Ctrl+I</kbd></td><td>Import from Excel</td></tr>
+  <tr><td><kbd>Ctrl+Shift+E</kbd></td><td>Export to Excel</td></tr>
+</table>
+<div class="tip">&#128161; You can also double-click any row to open the detail view.</div>
+
+<!-- =================================================================== -->
+<h2>9. Cash Receipts</h2>
+<p>Record multi-line cash collections. Works identically to Cash Disbursement
+but for incoming cash flows.</p>
+<table>
+  <tr><th>Shortcut</th><th>Action</th></tr>
+  <tr><td><kbd>Ctrl+N</kbd></td><td>Add a new receipt entry</td></tr>
+  <tr><td><kbd>Ctrl+E</kbd></td><td>Edit the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+Shift+C</kbd></td><td>Copy (duplicate) the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+V</kbd></td><td>View details of the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+D</kbd></td><td>Delete the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+F</kbd></td><td>Focus the search field</td></tr>
+  <tr><td><kbd>Ctrl+I</kbd></td><td>Import from Excel</td></tr>
+  <tr><td><kbd>Ctrl+Shift+E</kbd></td><td>Export to Excel</td></tr>
+</table>
+<div class="tip">&#128161; You can also double-click any row to open the detail view.</div>
+
+<!-- =================================================================== -->
+<h2>10. General Journal</h2>
+<p>Enter adjusting, correcting, or miscellaneous journal entries with
+multiple debit/credit lines. Double-click to expand a voucher. Common uses
+include depreciation entries (<code>ABC-6070</code> DR / <code>ABC-1x1x</code> CR),
+equity adjustments, and period-end accruals.</p>
+<table>
+  <tr><th>Shortcut</th><th>Action</th></tr>
+  <tr><td><kbd>Ctrl+N</kbd></td><td>Add a new journal entry</td></tr>
+  <tr><td><kbd>Ctrl+E</kbd></td><td>Edit the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+Shift+C</kbd></td><td>Copy (duplicate) the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+V</kbd></td><td>View details of the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+D</kbd></td><td>Delete the selected entry</td></tr>
+  <tr><td><kbd>Ctrl+F</kbd></td><td>Focus the search field</td></tr>
+  <tr><td><kbd>Ctrl+I</kbd></td><td>Import from Excel</td></tr>
+  <tr><td><kbd>Ctrl+Shift+E</kbd></td><td>Export to Excel</td></tr>
+</table>
+
+<!-- =================================================================== -->
+<h2>11. General Ledger</h2>
+<p>View all postings for a single account &mdash; or all accounts &mdash; within a
+chosen date range, with a running balance column. The running balance
+respects each account's Normal Balance &mdash; credit-normal accounts
+(<code>ABC-2xxx</code>, <code>ABC-3xxx</code>, <code>ABC-4xxx</code>) show a
+positive balance when they have a credit balance.</p>
+<table>
+  <tr><th>Shortcut</th><th>Action</th></tr>
+  <tr><td><kbd>Ctrl+F</kbd></td><td>Open the account selector dropdown</td></tr>
+  <tr><td><kbd>Enter</kbd></td><td>Load / refresh the ledger</td></tr>
+  <tr><td><kbd>Ctrl+R</kbd></td><td>Reset the date range to the current year</td></tr>
+</table>
+<div class="note">&#8505;&#65039; Entries are aggregated from all journals (SJ, PJ, CDJ, CRJ, GJ).
+Selecting <i>All Accounts</i> shows a summary view.</div>
+
+<!-- =================================================================== -->
+<h2>12. Trial Balance</h2>
+<p>Generate a working trial balance as of any date. Accounts with a positive
+amount have a debit balance (<code>ABC-1xxx</code>, <code>ABC-5xxx</code>,
+<code>ABC-6xxx</code>); accounts with a negative amount have a credit balance
+(<code>ABC-2xxx</code>, <code>ABC-3xxx</code>, <code>ABC-4xxx</code>).</p>
+<p>Use the <b>From / To</b> date pickers and click <b>Generate</b> to refresh.
+Use <kbd>F5</kbd> to reload with the same date range.</p>
+
+<!-- =================================================================== -->
+<h2>13. Financial Statements</h2>
+<p>Produce the <b>Statement of Financial Position</b> (Balance Sheet) or the
+<b>Statement of Financial Performance</b> (Income Statement). Enter the
+company name, click &#9881; <i>Generate Statement&hellip;</i>, select the statement
+type, business type, and date range, then confirm.</p>
+<table>
+  <tr><th>Shortcut</th><th>Action</th></tr>
+  <tr><td><kbd>Ctrl+G</kbd></td><td>Open the Generate Statement dialog</td></tr>
+  <tr><td><kbd>Ctrl+P</kbd></td><td>Print the current statement</td></tr>
+  <tr><td><kbd>Ctrl+Shift+P</kbd></td><td>Save the current statement as a PDF</td></tr>
+</table>
+<div class="tip">&#128161; The <b>Business Type</b> selector (Sole Proprietorship / Partnership /
+Corporation) changes the equity section label and Net Income label on the
+Balance Sheet automatically.</div>
+
+<!-- =================================================================== -->
+<h2>14. Importing &amp; Exporting Excel Files</h2>
+<p>Most journal tabs support bulk import and export via Excel
+(<code>.xlsx</code>). To import, prepare a spreadsheet whose column headers
+match the expected field names, then press <kbd>Ctrl+I</kbd> (or
+<kbd>Ctrl+Shift+I</kbd> in Alphalist). A summary dialog will report the
+number of records imported and any rows that were skipped.</p>
+<div class="note">&#8505;&#65039; <b>openpyxl</b> must be installed: <code>pip install openpyxl</code></div>
+
+<!-- =================================================================== -->
+<h2>15. Quick-Reference Shortcut Card</h2>
+<table>
+  <tr><th>Shortcut</th><th>Action</th><th>Applies to</th></tr>
+  <tr><td><kbd>F1</kbd></td><td>User Manual</td><td>Global</td></tr>
+  <tr><td><kbd>F5</kbd></td><td>Refresh all tabs</td><td>Global</td></tr>
+  <tr><td><kbd>Ctrl+Q</kbd></td><td>Quit</td><td>Global</td></tr>
+  <tr><td><kbd>Ctrl+Tab</kbd></td><td>Next tab</td><td>Global</td></tr>
+  <tr><td><kbd>Ctrl+Shift+Tab</kbd></td><td>Previous tab</td><td>Global</td></tr>
+  <tr><td><kbd>Ctrl+1&hellip;0</kbd></td><td>Jump to tab 1&ndash;10</td><td>Global</td></tr>
+  <tr><td><kbd>Ctrl+N</kbd></td><td>New entry</td><td>COA, Alphalist, Journals</td></tr>
+  <tr><td><kbd>Ctrl+E</kbd></td><td>Edit entry</td><td>COA, Alphalist, Journals</td></tr>
+  <tr><td><kbd>Ctrl+Shift+C</kbd></td><td>Copy/duplicate entry</td><td>Alphalist, Journals</td></tr>
+  <tr><td><kbd>Ctrl+V</kbd></td><td>View detail</td><td>CDJ, CRJ, GJ</td></tr>
+  <tr><td><kbd>Ctrl+D</kbd></td><td>Delete entry</td><td>COA, Alphalist, Journals</td></tr>
+  <tr><td><kbd>Ctrl+F</kbd></td><td>Search / filter</td><td>All tabs</td></tr>
+  <tr><td><kbd>Ctrl+I</kbd></td><td>Import from Excel</td><td>Journals (not COA)</td></tr>
+  <tr><td><kbd>Ctrl+Shift+I</kbd></td><td>Import from Excel</td><td>Alphalist</td></tr>
+  <tr><td><kbd>Ctrl+Shift+E</kbd></td><td>Export to Excel</td><td>Alphalist, Journals</td></tr>
+  <tr><td><kbd>Ctrl+L</kbd></td><td>Toggle list-type filter</td><td>Alphalist</td></tr>
+  <tr><td><kbd>Enter</kbd></td><td>Load ledger</td><td>General Ledger</td></tr>
+  <tr><td><kbd>Ctrl+R</kbd></td><td>Reset date range</td><td>General Ledger</td></tr>
+  <tr><td><kbd>Ctrl+G</kbd></td><td>Generate statement</td><td>Financial Statements</td></tr>
+  <tr><td><kbd>Ctrl+P</kbd></td><td>Print statement</td><td>Financial Statements</td></tr>
+  <tr><td><kbd>Ctrl+Shift+P</kbd></td><td>Save statement as PDF</td><td>Financial Statements</td></tr>
+</table>
+
+</body>
+</html>
