@@ -23,4 +23,7 @@ def get_import_dir(module_name: str) -> str:
 
 # Bundled resources (style.qss, user_manual.html, etc.)
 def get_resource(filename: str) -> str:
+    if getattr(sys, 'frozen', False):
+        # Bundled files are extracted to sys._MEIPASS at runtime
+        return os.path.join(sys._MEIPASS, 'resources', filename)
     return os.path.join(_app_root(), 'resources', filename)
