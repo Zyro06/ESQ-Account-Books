@@ -245,10 +245,8 @@ def _import_alphalist(ws, db_manager) -> dict:
     ci_last    = _col(col_map, 'last name', 'last')
     ci_addr1   = _col(col_map, 'address1', 'address 1', 'address_1')
     ci_addr2   = _col(col_map, 'address2', 'address 2', 'address_2')
-    ci_vat     = _col(col_map, 'vat type', 'vat')
     ci_etype   = _col(col_map, 'entry type', 'entry_type')
 
-    VAT_VALID   = {'VAT Regular', 'VAT Zero Rated', 'VAT Exempt', 'Non-VAT'}
     ETYPE_VALID = {'Customer&Vendor', 'Customer', 'Vendor'}
 
     from ui.alphalist_widget import format_tin
@@ -265,13 +263,10 @@ def _import_alphalist(ws, db_manager) -> dict:
             res['errors'].append(f'Row {rn}: invalid TIN "{raw_tin}" — skipped')
             continue
 
-        vat = _norm_str(_get(rv, ci_vat)) or 'VAT Regular'
-        if vat not in VAT_VALID:
-            vat = 'VAT Regular'
 
-        etype = _norm_str(_get(rv, ci_etype)) or 'Customer'
+        etype = _norm_str(_get(rv, ci_etype)) or 'Customer&Vendor'
         if etype not in ETYPE_VALID:
-            etype = 'Customer'
+            etype = 'Customer&Vendor'
 
         data = {
             'tin':          tin,
@@ -281,7 +276,6 @@ def _import_alphalist(ws, db_manager) -> dict:
             'last_name':    _norm_str(_get(rv, ci_last)),
             'address1':     _norm_str(_get(rv, ci_addr1)),
             'address2':     _norm_str(_get(rv, ci_addr2)),
-            'vat':          vat,
             'entry_type':   etype,
         }
 

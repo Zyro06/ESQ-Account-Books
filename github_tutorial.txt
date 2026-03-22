@@ -1,0 +1,305 @@
+================================================================
+        GIT & GITHUB TUTORIAL FOR ESQ ACCOUNTING SYSTEM
+        A Simple Guide for Committing, Versioning & Releasing
+================================================================
+
+
+----------------------------------------------------------------
+  SECTION 1 — FIRST TIME SETUP (do this only once)
+----------------------------------------------------------------
+
+1. Configure your Git identity (in terminal):
+
+     git config --global user.name "YourName"
+     git config --global user.email "your@email.com"
+
+   Use the same email as your GitHub account.
+
+
+2. Open your project folder in VSCode:
+
+     File → Open Folder → select "Accounting App"
+
+
+3. Initialize the repository:
+
+     Press Ctrl+Shift+G (Source Control panel)
+     Click "Initialize Repository"
+
+   OR in terminal:
+     cd "D:\AppDev\Accounting App"
+     git init
+
+
+4. Create your .gitignore file in the project root
+   (this prevents unwanted files from being uploaded)
+
+   Minimum contents for this project:
+   ------------------------------------
+   __pycache__/
+   *.py[cod]
+   build/
+   dist/
+   Data/
+   *.db
+   *_prefs.json
+   venv/
+   .venv/
+   ------------------------------------
+
+
+5. Publish to GitHub for the first time:
+
+     - Stage all files: click the + next to "Changes" in Source Control
+     - Type a commit message: "Initial commit"
+     - Click the checkmark (✓) to commit
+     - Click "Publish Branch"
+     - Sign in to GitHub in the browser that opens
+     - Choose Public or Private
+     - Give your repo a name (e.g. accounting-app)
+     - Click Publish
+
+
+----------------------------------------------------------------
+  SECTION 2 — EVERYDAY WORKFLOW (do this regularly)
+----------------------------------------------------------------
+
+STEP 1 — Make your code changes as normal
+
+STEP 2 — Stage your changes
+     In VSCode Source Control panel:
+     Click the + next to "Changes" to stage all
+     OR click + next to individual files to stage only some
+
+STEP 3 — Write a commit message
+     In the text box at the top of Source Control panel
+     Write a short description of what you changed, e.g.:
+       "Fix VAT calculation rounding"
+       "Add month filter to Sales Journal"
+       "Fix out of balance on Financial Position"
+
+STEP 4 — Commit
+     Click the checkmark (✓) button
+     OR press Ctrl+Enter
+
+STEP 5 — Push to GitHub
+     Click the "Sync Changes" button (circular arrows)
+     OR click "Push" from the ... menu
+     OR in terminal:
+       git push
+
+
+COMMIT MESSAGE TIPS:
+  - Keep it short (under 72 characters)
+  - Use present tense: "Add feature" not "Added feature"
+  - Be specific: "Fix AR balance in October GL" not "Fix bug"
+
+GOOD EXAMPLES:
+  "Add export button to General Ledger"
+  "Fix Financial Statement out of balance -12,220.80"
+  "Add month dropdown to all journal widgets"
+  "Fix empty COA still seeding default accounts"
+
+BAD EXAMPLES:
+  "fix"
+  "update"
+  "changes"
+  "asdfgh"
+
+
+----------------------------------------------------------------
+  SECTION 3 — PUSH, PULL, FETCH EXPLAINED
+----------------------------------------------------------------
+
+PUSH  ↑
+  Sends your local commits UP to GitHub.
+  Use after committing new changes.
+  Command: git push
+
+PULL  ↓
+  Downloads changes from GitHub AND merges them into
+  your local code automatically.
+  Use when switching computers or collaborating.
+  Command: git pull
+
+FETCH ↓
+  Downloads changes from GitHub but does NOT merge.
+  Just checks what is new without touching your files.
+  Use to peek at updates before deciding to pull.
+  Command: git fetch
+
+FOR SOLO DEVELOPMENT:
+  You will mostly only use PUSH.
+  Commit → Push → done.
+
+
+----------------------------------------------------------------
+  SECTION 4 — MAKING A VERSION RELEASE
+----------------------------------------------------------------
+
+VERSIONS FOLLOW THIS PATTERN:
+  v1.0-alpha   First alpha (early testing, may have bugs)
+  v1.1-alpha   Bug fixes and small additions
+  v1.2-alpha   More features added
+  v1.0-beta    More stable, feature complete
+  v1.0         Full public release
+
+
+STEP 1 — Make sure all changes are committed and pushed
+
+STEP 2 — Create a tag in terminal:
+     git tag -a v1.0-alpha -m "Alpha release v1.0"
+     git push origin v1.0-alpha
+
+   Replace v1.0-alpha with your version number each time.
+
+
+STEP 3 — Create the Release on GitHub.com:
+     1. Go to your repository on GitHub
+     2. Click "Releases" on the right side
+     3. Click "Create a new release" or "Draft a new release"
+     4. Click "Choose a tag" → select v1.0-alpha
+     5. Set the title: Alpha v1.0
+     6. Write release notes (what's new, what's fixed)
+     7. Check "Set as a pre-release" for alpha/beta versions
+     8. Attach your zip file (the .exe package)
+     9. Click "Publish release"
+
+
+STEP 4 — Build and zip the exe before uploading:
+     In PowerShell:
+       pyinstaller accounting.spec
+       Compress-Archive -Path "dist\ESQ Accounting System" -DestinationPath "ESQ_Accounting_v1.0-alpha.zip"
+
+     Or manually:
+       Right-click dist\ESQ Accounting System folder
+       → Send to → Compressed (zipped) folder
+       Rename to ESQ_Accounting_v1.0-alpha.zip
+
+
+----------------------------------------------------------------
+  SECTION 5 — BUILDING THE EXE (PyInstaller)
+----------------------------------------------------------------
+
+INSTALL PYINSTALLER (once):
+  py -m pip install pyinstaller
+  OR
+  python -m pip install pyinstaller
+
+
+BUILD THE EXE:
+  cd "D:\AppDev\Accounting App"
+  pyinstaller accounting.spec
+
+
+OUTPUT:
+  dist\ESQ Accounting System\
+    ESQ Accounting System.exe    ← the app
+    resources\                   ← style, manual, etc.
+    _internal\                   ← Qt, Python runtime, libraries
+
+
+TEST BEFORE ZIPPING:
+  Run the .exe directly from the dist folder first.
+  Make sure it opens, loads correctly, and can create/load accounts.
+  Only zip and upload once confirmed working.
+
+
+----------------------------------------------------------------
+  SECTION 6 — COMMON TERMINAL COMMANDS REFERENCE
+----------------------------------------------------------------
+
+SETUP
+  git config --global user.name "Name"      Set your name
+  git config --global user.email "email"    Set your email
+  git init                                  Initialize repo
+
+STATUS & INFO
+  git status                                See changed files
+  git log --oneline                         See commit history
+  git log --oneline --graph                 See history as graph
+
+STAGING & COMMITTING
+  git add .                                 Stage all changes
+  git add filename.py                       Stage one file
+  git commit -m "your message"              Commit staged changes
+  git commit -am "your message"             Stage + commit in one step
+
+PUSHING & PULLING
+  git push                                  Push to GitHub
+  git pull                                  Pull from GitHub
+  git fetch                                 Fetch without merging
+
+TAGS & VERSIONS
+  git tag -a v1.0-alpha -m "message"       Create a version tag
+  git push origin v1.0-alpha               Push tag to GitHub
+  git tag                                   List all tags
+
+UNDOING MISTAKES
+  git restore filename.py                   Undo changes to a file
+  git restore .                             Undo ALL unsaved changes
+  git reset HEAD~1                          Undo last commit (keeps changes)
+
+
+----------------------------------------------------------------
+  SECTION 7 — RECOMMENDED COMMIT SCHEDULE
+----------------------------------------------------------------
+
+COMMIT WHEN:
+  - You finish adding a new feature
+  - You fix a bug
+  - Before making major changes (so you can roll back)
+  - At the end of each coding session
+  - Before building a new release
+
+DO NOT COMMIT:
+  - Broken code that crashes (unless noting it as WIP)
+  - Database files (*.db)
+  - Build output (dist/, build/)
+  - Temporary test files
+
+
+----------------------------------------------------------------
+  SECTION 8 — UPDATING AN EXISTING RELEASE
+----------------------------------------------------------------
+
+If you forgot to attach the zip or need to fix something:
+
+  1. Go to GitHub.com → your repo → Releases
+  2. Click the pencil/edit icon on the release
+  3. Make your changes or attach new files
+  4. Click "Update release"
+
+To add a new patch version (e.g. v1.1-alpha):
+  1. Fix the bugs in your code
+  2. Commit and push the fixes
+  3. git tag -a v1.1-alpha -m "Alpha release v1.1 - bug fixes"
+  4. git push origin v1.1-alpha
+  5. Create a new release on GitHub for v1.1-alpha
+  6. Attach the new zip build
+
+
+================================================================
+  QUICK REFERENCE CARD
+================================================================
+
+DAILY WORK:
+  1. Make changes to code
+  2. Ctrl+Shift+G → stage (+) → type message → commit (✓)
+  3. Push (sync button or git push)
+
+NEW RELEASE:
+  1. Commit and push all changes
+  2. git tag -a v1.x-alpha -m "message"
+  3. git push origin v1.x-alpha
+  4. pyinstaller accounting.spec
+  5. Zip the dist folder
+  6. GitHub → Releases → New release → attach zip → publish
+
+IF SOMETHING GOES WRONG:
+  git restore .           Undo all uncommitted changes
+  git reset HEAD~1        Undo the last commit
+
+================================================================
+                          END OF TUTORIAL
+================================================================
