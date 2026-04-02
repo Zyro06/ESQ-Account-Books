@@ -1,0 +1,1516 @@
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit,
+    QDateEdit, QGroupBox, QLineEdit, QDialog, QFormLayout,
+    QComboBox, QDialogButtonBox, QFrame, QSizePolicy, QFileDialog,
+    QMessageBox, QListWidget, QListWidgetItem, QSplitter, QScrollArea,
+    QGridLayout, QInputDialog
+)
+from PySide6.QtCore import Qt, QDate, QSize, QMarginsF
+from PySide6.QtGui import QKeySequence, QFont, QTextCursor, QShortcut, QColor, QIcon, QPageLayout, QPageSize
+from PySide6.QtPrintSupport import QPrinter, QPrintDialog
+from database.db_manager import DatabaseManager
+import calendar
+import json
+import os
+from datetime import datetime
+
+# qtawesome for Material icons
+try:
+    import qtawesome as qta
+    _QTA_OK = True
+except ImportError:
+    _QTA_OK = False
+
+# ReportLab for PDF generation
+try:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from reportlab.platypus.tables import Table, TableStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+    _REPORTLAB_OK = True
+except ImportError:
+    _REPORTLAB_OK = False
+
+
+def _save_pdf_reportlab(structured: dict, path: str, title: str = "Financial Statement"):
+    if not _REPORTLAB_OK:
+        raise RuntimeError("reportlab is not installed.\nRun:  pip install reportlab")
+
+    doc = SimpleDocTemplate(
+        path, pagesize=letter,
+        leftMargin=0.65 * inch, rightMargin=0.65 * inch,
+        topMargin=0.70 * inch,  bottomMargin=0.70 * inch,
+        title=title,
+    )
+
+    C_NAVY  = colors.HexColor("#1a2a4a")
+    C_RULE  = colors.HexColor("#1a2a4a")
+    C_LIGHT = colors.HexColor("#f4f6fb")
+    C_WARN  = colors.HexColor("#c62828")
+    C_BODY  = colors.HexColor("#1c1c1c")
+    C_MUTED = colors.HexColor("#555555")
+
+    SANS   = "Helvetica"
+    SANS_B = "Helvetica-Bold"
+
+    def _ps(name, **kw):
+        base = dict(fontName=SANS, fontSize=9, leading=13,
+                    textColor=C_BODY, spaceAfter=0, spaceBefore=0)
+        base.update(kw)
+        return ParagraphStyle(name, **base)
+
+    sty_company  = _ps("co",   fontName=SANS_B, fontSize=13, leading=17,
+                               alignment=TA_CENTER, textColor=C_NAVY, spaceBefore=4)
+    sty_stmtname = _ps("sn",   fontName=SANS_B, fontSize=10, leading=14,
+                               alignment=TA_CENTER, textColor=C_NAVY)
+    sty_subtitle = _ps("sub",  fontSize=9, leading=12,
+                               alignment=TA_CENTER, textColor=C_MUTED, spaceAfter=6)
+    sty_section  = _ps("sec",  fontName=SANS_B, fontSize=9, leading=13,
+                               textColor=C_NAVY, spaceBefore=10, spaceAfter=2)
+    sty_sub_hdr  = _ps("shdr", fontName=SANS_B, fontSize=8.5, leading=12,
+                               textColor=C_MUTED, spaceBefore=4, spaceAfter=1)
+    sty_warn     = _ps("warn", fontName=SANS_B, fontSize=8.5, leading=12,
+                               textColor=C_WARN, spaceBefore=8)
+
+    PW       = letter[0] - 1.30 * inch
+    COL_CODE = 0.80 * inch
+    COL_AMT  = 1.10 * inch
+    COL_DESC = PW - COL_CODE - COL_AMT
+
+    def _p(txt, style): return Paragraph(str(txt), style)
+    def _hr(thick=0.5, clr=C_RULE):
+        return HRFlowable(width="100%", thickness=thick, color=clr,
+                          spaceAfter=2, spaceBefore=2)
+
+    def _account_table(rows, indent=0):
+        tbl_data, row_styles = [], []
+        for i, row in enumerate(rows):
+            code, desc, amt_str, is_total, is_sub = row
+            if is_total:
+                fn, fc, fs = SANS_B, C_NAVY, 9
+            elif is_sub:
+                fn, fc, fs = SANS_B, C_MUTED, 8.5
+            else:
+                fn, fc, fs = SANS, C_BODY, 9
+
+            def _cp(t, align=TA_LEFT, **kw):
+                return Paragraph(t, _ps(f"r{i}", fontName=fn, fontSize=fs,
+                                        leading=fs*1.4, textColor=fc, alignment=align, **kw))
+            tbl_data.append([_cp(code or ""), _cp(desc or ""),
+                              _cp(amt_str or "", align=TA_RIGHT)])
+            if is_total:
+                row_styles += [('LINEABOVE', (0,i),(-1,i), 0.5, C_RULE),
+                                ('LINEBELOW', (0,i),(-1,i), 0.5, C_RULE),
+                                ('TOPPADDING',(0,i),(-1,i), 3),
+                                ('BACKGROUND',(0,i),(-1,i), C_LIGHT)]
+            elif is_sub:
+                row_styles += [('TOPPADDING',(0,i),(-1,i), 4)]
+
+        col_indent = indent * 0.18 * inch
+        cw = [COL_CODE, COL_DESC - col_indent, COL_AMT]
+        t = Table(tbl_data, colWidths=cw, repeatRows=0)
+        t.setStyle(TableStyle([
+            ('LEFTPADDING',   (0,0),(-1,-1), 0),
+            ('RIGHTPADDING',  (0,0),(-1,-1), 0),
+            ('TOPPADDING',    (0,0),(-1,-1), 1),
+            ('BOTTOMPADDING', (0,0),(-1,-1), 1),
+            ('VALIGN',        (0,0),(-1,-1), 'MIDDLE'),
+        ] + row_styles))
+        return t
+
+    story = [
+        _p(structured['company'],   sty_company),
+        _p(structured['stmt_name'], sty_stmtname),
+        _p(structured['subtitle'],  sty_subtitle),
+        _hr(thick=1.5), Spacer(1, 4),
+    ]
+    for sec in structured['sections']:
+        if sec.get('title'):      story.append(_p(sec['title'], sty_section))
+        if sec.get('sub_header'): story.append(_p(sec['sub_header'], sty_sub_hdr))
+        if sec.get('rows'):       story.append(_account_table(sec['rows'], indent=sec.get('indent', 0)))
+        if sec.get('total_rows'): story.append(_account_table(sec['total_rows'], indent=0))
+        if sec.get('spacer', True): story.append(Spacer(1, 4))
+    if structured.get('warning'):
+        story += [_hr(thick=1, clr=C_WARN),
+                  _p(structured['warning'], sty_warn),
+                  _hr(thick=1, clr=C_WARN)]
+    story += [Spacer(1, 6), _hr(thick=1.5)]
+    doc.build(story)
+
+
+from utils.date_utils   import DateItem as _DateItem
+from utils.export_utils import export_to_xls as _export_to_xls
+from utils.import_utils import import_from_xls as _import_from_xls
+from resources.file_paths import get_io_dir
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+MONTHS = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+]
+
+def _fmt_date(qdate: QDate) -> str:
+    return f"{MONTHS[qdate.month() - 1]} {qdate.day()}, {qdate.year()}"
+
+def _month_last_day(year: int, month: int) -> int:
+    return calendar.monthrange(year, month)[1]
+
+def _centre(text: str, width: int) -> str:
+    return text.center(width)
+
+def _period_label(from_d: QDate, to_d: QDate) -> str:
+    num_months = (to_d.year() - from_d.year()) * 12 + \
+                 (to_d.month() - from_d.month()) + 1
+    SMALL_WORDS = {1:"One",2:"Two",3:"Three",4:"Four",5:"Five",6:"Six",
+                   7:"Seven",8:"Eight",9:"Nine",10:"Ten",11:"Eleven"}
+    YEAR_WORDS  = {1:"the Year",2:"Two Years",3:"Three Years",
+                   4:"Four Years",5:"Five Years"}
+    end_date = _fmt_date(to_d)
+    if num_months == 1:
+        span = "the Month"
+    elif num_months % 12 == 0:
+        span = YEAR_WORDS.get(num_months // 12, f"{num_months // 12} Years")
+    elif num_months > 12:
+        span = f"{num_months} Months"
+    else:
+        span = f"{SMALL_WORDS[num_months]} Months"
+    return f"For {span} Ending {end_date}"
+
+
+def _qta_icon(name: str, color: str = "#555555") -> QIcon:
+    if _QTA_OK:
+        try:
+            return qta.icon(name, color=color)
+        except Exception:
+            pass
+    return QIcon()
+
+
+# ---------------------------------------------------------------------------
+# DB helpers — saved_statements table
+# ---------------------------------------------------------------------------
+
+def _ensure_saved_statements_table(db_manager: DatabaseManager):
+    conn = db_manager.get_connection()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS saved_statements (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            label       TEXT    NOT NULL,
+            stmt_type   TEXT    NOT NULL,
+            stmt_text   TEXT    NOT NULL,
+            params_json TEXT    NOT NULL,
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+
+
+def _serialise_params(params: dict) -> dict:
+    """Convert QDate values → ISO string dicts for JSON storage."""
+    out = {}
+    for k, v in params.items():
+        if isinstance(v, QDate):
+            out[k] = {'__qdate__': v.toString("yyyy-MM-dd")}
+        else:
+            out[k] = v
+    return out
+
+
+def _deserialise_params(params: dict) -> dict:
+    """Restore QDate objects from JSON-loaded params."""
+    out = {}
+    for k, v in params.items():
+        if isinstance(v, dict) and '__qdate__' in v:
+            out[k] = QDate.fromString(v['__qdate__'], "yyyy-MM-dd")
+        else:
+            out[k] = v
+    return out
+
+
+def _db_save_statement(db_manager: DatabaseManager, label: str,
+                       stmt_type: str, stmt_text: str, params: dict) -> int:
+    safe = _serialise_params(params)
+    conn = db_manager.get_connection()
+    cur  = conn.execute(
+        "INSERT INTO saved_statements (label, stmt_type, stmt_text, params_json) "
+        "VALUES (?,?,?,?)",
+        (label, stmt_type, stmt_text, json.dumps(safe))
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def _db_load_all_statements(db_manager: DatabaseManager) -> list:
+    conn = db_manager.get_connection()
+    cur  = conn.execute(
+        "SELECT id, label, stmt_type, stmt_text, params_json, created_at "
+        "FROM saved_statements ORDER BY id DESC"
+    )
+    rows = []
+    for row in cur.fetchall():
+        params = _deserialise_params(json.loads(row[4]))
+        rows.append({
+            'id':        row[0],
+            'label':     row[1],
+            'stmt_type': row[2],
+            'text':      row[3],
+            'params':    params,
+            'timestamp': row[5][:16] if row[5] else '',
+        })
+    return rows
+
+
+def _db_rename_statement(db_manager: DatabaseManager, stmt_id: int, new_label: str):
+    conn = db_manager.get_connection()
+    conn.execute("UPDATE saved_statements SET label=? WHERE id=?", (new_label, stmt_id))
+    conn.commit()
+
+
+def _db_delete_statement(db_manager: DatabaseManager, stmt_id: int):
+    conn = db_manager.get_connection()
+    conn.execute("DELETE FROM saved_statements WHERE id=?", (stmt_id,))
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Generate dialog
+# ---------------------------------------------------------------------------
+
+class GenerateDialog(QDialog):
+    _POSITION_NAMES    = ["Statement of Financial Position", "Balance Sheet"]
+    _PERFORMANCE_NAMES = ["Statement of Financial Performance", "Income Statement"]
+
+    def __init__(self, company_name: str, parent=None):
+        super().__init__(parent)
+        self.company_name = company_name
+        self.setWindowTitle("Generate Financial Statement")
+        self.setModal(True)
+        self.setMinimumWidth(420)
+
+        root = QVBoxLayout()
+        root.setSpacing(14)
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignRight)
+        form.setSpacing(10)
+
+        self.type_combo = QComboBox()
+        self.type_combo.addItems(["Financial Position", "Financial Performance"])
+        self.type_combo.currentIndexChanged.connect(self._on_type_changed)
+        form.addRow("Statement:", self.type_combo)
+
+        self.name_combo = QComboBox()
+        form.addRow("Name:", self.name_combo)
+
+        self.biz_type_combo = QComboBox()
+        self.biz_type_combo.addItems(["Sole Proprietorship", "Partnership", "Corporation"])
+        form.addRow("Business Type:", self.biz_type_combo)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFrameShadow(QFrame.Sunken)
+
+        # Position date
+        self._pos_widget = QWidget()
+        pos_form = QFormLayout(self._pos_widget)
+        pos_form.setContentsMargins(0, 0, 0, 0)
+        pos_form.setLabelAlignment(Qt.AlignRight)
+        self.as_of_date = QDateEdit()
+        self.as_of_date.setCalendarPopup(True)
+        self.as_of_date.setDisplayFormat("MM/dd/yyyy")
+        self.as_of_date.setDate(QDate.currentDate())
+        pos_form.addRow("As of:", self.as_of_date)
+
+        # Performance date
+        self._perf_widget = QWidget()
+        perf_form = QFormLayout(self._perf_widget)
+        perf_form.setContentsMargins(0, 0, 0, 0)
+        perf_form.setLabelAlignment(Qt.AlignRight)
+
+        current_year = QDate.currentDate().year()
+        years = [str(y) for y in range(current_year - 5, current_year + 3)]
+
+        from_row = QHBoxLayout()
+        self.from_year_combo = QComboBox()
+        self.from_year_combo.addItems(years)
+        self.from_year_combo.setCurrentText(str(current_year))
+        self.from_year_combo.currentIndexChanged.connect(self._clamp_to_date)
+        self.from_month_combo = QComboBox()
+        self.from_month_combo.addItems(MONTHS)
+        self.from_month_combo.setCurrentIndex(0)
+        self.from_month_combo.currentIndexChanged.connect(self._clamp_to_date)
+        from_row.addWidget(self.from_year_combo)
+        from_row.addWidget(self.from_month_combo)
+        perf_form.addRow("From:", from_row)
+
+        to_row = QHBoxLayout()
+        self.to_year_combo = QComboBox()
+        self.to_year_combo.addItems(years)
+        self.to_year_combo.setCurrentText(str(current_year))
+        self.to_year_combo.currentIndexChanged.connect(self._clamp_to_date)
+        self.to_month_combo = QComboBox()
+        self.to_month_combo.addItems(MONTHS)
+        self.to_month_combo.setCurrentIndex(QDate.currentDate().month() - 1)
+        self.to_month_combo.currentIndexChanged.connect(self._clamp_to_date)
+        to_row.addWidget(self.to_year_combo)
+        to_row.addWidget(self.to_month_combo)
+        perf_form.addRow("To:", to_row)
+
+        root.addLayout(form)
+        root.addWidget(sep)
+        root.addWidget(self._pos_widget)
+        root.addWidget(self._perf_widget)
+        root.addStretch()
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btns.button(QDialogButtonBox.StandardButton.Ok).setText("Generate")
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        root.addWidget(btns)
+
+        self.setLayout(root)
+        self._on_type_changed(0)
+
+    def _on_type_changed(self, idx):
+        is_pos = (idx == 0)
+        self.name_combo.blockSignals(True)
+        self.name_combo.clear()
+        self.name_combo.addItems(
+            self._POSITION_NAMES if is_pos else self._PERFORMANCE_NAMES)
+        self.name_combo.blockSignals(False)
+        self._pos_widget.setVisible(is_pos)
+        self._perf_widget.setVisible(not is_pos)
+
+    def _clamp_to_date(self):
+        from_year  = int(self.from_year_combo.currentText())
+        from_month = self.from_month_combo.currentIndex() + 1
+        to_year    = int(self.to_year_combo.currentText())
+        to_month   = self.to_month_combo.currentIndex() + 1
+        if to_year * 12 + to_month < from_year * 12 + from_month:
+            self.to_year_combo.blockSignals(True)
+            self.to_month_combo.blockSignals(True)
+            self.to_year_combo.setCurrentText(str(from_year))
+            self.to_month_combo.setCurrentIndex(from_month - 1)
+            self.to_year_combo.blockSignals(False)
+            self.to_month_combo.blockSignals(False)
+
+    def get_params(self) -> dict:
+        is_pos = self.type_combo.currentIndex() == 0
+        params = {
+            'type':          'position' if is_pos else 'performance',
+            'name':          self.name_combo.currentText(),
+            'company_name':  self.company_name,
+            'business_type': self.biz_type_combo.currentText(),
+        }
+        if is_pos:
+            params['as_of_date'] = self.as_of_date.date()
+        else:
+            from_year  = int(self.from_year_combo.currentText())
+            from_month = self.from_month_combo.currentIndex() + 1
+            to_year    = int(self.to_year_combo.currentText())
+            to_month   = self.to_month_combo.currentIndex() + 1
+            params['from_date'] = QDate(from_year, from_month, 1)
+            params['to_date']   = QDate(to_year, to_month,
+                                        _month_last_day(to_year, to_month))
+        return params
+
+
+# ---------------------------------------------------------------------------
+# Print preview dialog
+# ---------------------------------------------------------------------------
+
+class PrintPreviewDialog(QDialog):
+    def __init__(self, statement_text: str, title: str, structured: dict = None, parent=None):
+        super().__init__(parent)
+        self._structured = structured or {}
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.resize(860, 720)
+
+        root = QVBoxLayout()
+
+        self.display = QTextEdit()
+        self.display.setReadOnly(True)
+        _mono = QFont("Courier New", 10)
+        _mono.setStyleHint(QFont.StyleHint.Monospace)
+        _mono.setFixedPitch(True)
+        self.display.setFont(_mono)
+        self.display.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self.display.setStyleSheet(
+            "QTextEdit { font-family: 'Courier New'; font-size: 10pt; }"
+        )
+        self.display.document().setDefaultStyleSheet("")
+        self.display.setPlainText(statement_text)
+        root.addWidget(self.display)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        self.print_btn = QPushButton("🖨  Print")
+        self.print_btn.setFixedHeight(34)
+        self.print_btn.clicked.connect(self._print)
+        self.pdf_btn = QPushButton("📄  Print as PDF")
+        self.pdf_btn.setFixedHeight(34)
+        self.pdf_btn.clicked.connect(self._print_pdf)
+        close_btn = QPushButton("Close")
+        close_btn.setFixedHeight(34)
+        close_btn.clicked.connect(self.reject)
+        btn_row.addWidget(self.print_btn)
+        btn_row.addWidget(self.pdf_btn)
+        btn_row.addWidget(close_btn)
+        root.addLayout(btn_row)
+
+        self.setLayout(root)
+
+    def _print(self):
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        printer.setPageLayout(QPageLayout(
+            QPageSize(QPageSize.PageSizeId.Letter),
+            QPageLayout.Orientation.Portrait,
+            QMarginsF(10, 10, 10, 10),
+        ))
+        dlg = QPrintDialog(printer, self)
+        if dlg.exec() == QPrintDialog.DialogCode.Accepted:
+            self.display.print_(printer)
+
+    def _print_pdf(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save as PDF",
+            os.path.join(get_io_dir("Financial Statements"), "financial_statement.pdf"),
+            "PDF Files (*.pdf)"
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".pdf"):
+            path += ".pdf"
+        try:
+            if self._structured:
+                _save_pdf_reportlab(self._structured, path, self.windowTitle())
+            else:
+                raise RuntimeError("No structured data available for PDF export.")
+            QMessageBox.information(self, "PDF Saved", f"Saved to:\n{path}")
+        except Exception as exc:
+            QMessageBox.critical(self, "PDF Error", str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Metric card widget
+# ---------------------------------------------------------------------------
+
+class MetricCard(QFrame):
+    STATUS_STYLES = {
+        'good':    ("background:#e6f9f0; border:1.5px solid #34c47c; border-radius:6px;",
+                    "#1a7a45", "#34c47c"),
+        'warn':    ("background:#fff8e6; border:1.5px solid #f5a623; border-radius:6px;",
+                    "#8a5a00", "#f5a623"),
+        'bad':     ("background:#fdecea; border:1.5px solid #e53935; border-radius:6px;",
+                    "#b71c1c", "#e53935"),
+        'neutral': ("background:#f0f4ff; border:1.5px solid #5c7cfa; border-radius:6px;",
+                    "#1a3a8f", "#5c7cfa"),
+    }
+    ICONS = {'good': '✅', 'warn': '⚠️', 'bad': '🔴', 'neutral': 'ℹ️'}
+
+    def __init__(self, label: str, value: str, note: str, status: str = 'neutral', parent=None):
+        super().__init__(parent)
+        frame_style, text_color, accent = self.STATUS_STYLES.get(status, self.STATUS_STYLES['neutral'])
+        self.setStyleSheet(f"MetricCard {{ {frame_style} }} ")
+        self.setContentsMargins(8, 6, 8, 6)
+
+        lay = QVBoxLayout(self)
+        lay.setSpacing(2)
+        lay.setContentsMargins(6, 6, 6, 6)
+
+        lbl_row = QHBoxLayout()
+        icon_lbl = QLabel(self.ICONS.get(status, 'ℹ️'))
+        icon_lbl.setFixedWidth(20)
+        name_lbl = QLabel(label)
+        name_lbl.setStyleSheet(f"font-size:10px; font-weight:600; color:{text_color};")
+        lbl_row.addWidget(icon_lbl)
+        lbl_row.addWidget(name_lbl)
+        lbl_row.addStretch()
+        lay.addLayout(lbl_row)
+
+        val_lbl = QLabel(value)
+        val_lbl.setStyleSheet(f"font-size:16px; font-weight:800; color:{text_color};")
+        lay.addWidget(val_lbl)
+
+        note_lbl = QLabel(note)
+        note_lbl.setStyleSheet(f"font-size:9px; color:{text_color}; opacity:0.8;")
+        note_lbl.setWordWrap(True)
+        lay.addWidget(note_lbl)
+
+
+# ---------------------------------------------------------------------------
+# Analysis panel
+# ---------------------------------------------------------------------------
+
+class AnalysisPanel(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumWidth(220)
+        self.setMaximumWidth(300)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(4, 0, 4, 0)
+        root.setSpacing(6)
+
+        header = QLabel("📊  Smart Analysis")
+        header.setStyleSheet(
+            "font-size:12px; font-weight:700; color:#2d3a5e;"
+            "padding:6px 4px; border-bottom:2px solid #5c7cfa;"
+        )
+        root.addWidget(header)
+
+        self._placeholder = QLabel("Generate a statement to\nsee financial analysis here.")
+        self._placeholder.setAlignment(Qt.AlignCenter)
+        self._placeholder.setStyleSheet("color:#aaa; font-size:11px; padding:20px 0;")
+        root.addWidget(self._placeholder)
+
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._cards_widget = QWidget()
+        self._cards_layout = QVBoxLayout(self._cards_widget)
+        self._cards_layout.setSpacing(6)
+        self._cards_layout.setContentsMargins(0, 0, 0, 0)
+        self._cards_layout.addStretch()
+        self._scroll.setWidget(self._cards_widget)
+        self._scroll.hide()
+        root.addWidget(self._scroll)
+        root.addStretch()
+
+    def clear(self):
+        while self._cards_layout.count() > 1:
+            item = self._cards_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._scroll.hide()
+        self._placeholder.show()
+
+    def show_analysis(self, metrics: list):
+        self.clear()
+        self._placeholder.hide()
+        for i, (label, value, note, status) in enumerate(metrics):
+            card = MetricCard(label, value, note, status)
+            self._cards_layout.insertWidget(i, card)
+        self._scroll.show()
+
+    def analyze_position(self, data: dict):
+        total_assets      = data.get('total_assets', 0)
+        total_liabilities = data.get('total_liabilities', 0)
+        total_equity      = data.get('total_equity', 0)
+        current_assets    = data.get('current_assets', total_assets)
+        current_liab      = data.get('current_liabilities', total_liabilities)
+        net_income        = data.get('net_income', 0)
+        metrics = []
+
+        if current_liab != 0:
+            cr = current_assets / current_liab
+            cr_status = 'good' if cr >= 2 else ('warn' if cr >= 1 else 'bad')
+            cr_note = ("Strong liquidity" if cr >= 2 else
+                       "Adequate liquidity" if cr >= 1 else
+                       "Liquidity risk — liabilities exceed assets")
+            metrics.append(("Current Ratio", f"{cr:.2f}x", cr_note, cr_status))
+        else:
+            metrics.append(("Current Ratio", "N/A", "No current liabilities", "neutral"))
+
+        if total_equity != 0:
+            de = total_liabilities / total_equity
+            de_status = 'good' if de < 1 else ('warn' if de < 2 else 'bad')
+            de_note = ("Low leverage — conservative financing" if de < 1 else
+                       "Moderate leverage" if de < 2 else
+                       "High leverage — debt-heavy structure")
+            metrics.append(("Debt-to-Equity", f"{de:.2f}x", de_note, de_status))
+        else:
+            metrics.append(("Debt-to-Equity", "N/A", "Equity is zero", "warn"))
+
+        if total_assets != 0:
+            er = (total_equity / total_assets) * 100
+            er_status = 'good' if er >= 50 else ('warn' if er >= 30 else 'bad')
+            er_note = ("Majority equity-financed" if er >= 50 else
+                       "Mixed financing" if er >= 30 else "Majority debt-financed")
+            metrics.append(("Equity Ratio", f"{er:.1f}%", er_note, er_status))
+
+        wc = current_assets - current_liab
+        wc_status = 'good' if wc > 0 else ('warn' if wc == 0 else 'bad')
+        wc_note = (f"Positive buffer of {wc:,.2f}" if wc > 0 else
+                   "Break-even" if wc == 0 else f"Deficit of {abs(wc):,.2f}")
+        metrics.append(("Working Capital", f"{wc:,.0f}", wc_note, wc_status))
+
+        if total_equity != 0:
+            roe = (net_income / total_equity) * 100
+            roe_status = 'good' if roe >= 10 else ('warn' if roe >= 0 else 'bad')
+            roe_note = ("Strong returns" if roe >= 15 else "Moderate returns" if roe >= 5 else
+                        "Negative returns" if roe < 0 else "Low returns")
+            metrics.append(("Return on Equity", f"{roe:.1f}%", roe_note, roe_status))
+
+        diff = total_assets - (total_liabilities + total_equity)
+        bal_status = 'good' if abs(diff) < 0.01 else 'bad'
+        bal_note = "Statement is balanced ✓" if abs(diff) < 0.01 else f"Out of balance by {diff:,.2f}"
+        metrics.append(("Balance Check", "OK" if abs(diff) < 0.01 else "FAIL", bal_note, bal_status))
+        self.show_analysis(metrics)
+
+    def analyze_performance(self, data: dict):
+        total_revenue  = data.get('total_revenue', 0)
+        total_cogs     = data.get('total_cogs', 0)
+        gross_profit   = data.get('gross_profit', 0)
+        total_expenses = data.get('total_expenses', 0)
+        net_income     = data.get('net_income', 0)
+        metrics = []
+
+        if total_revenue != 0:
+            gm = (gross_profit / total_revenue) * 100
+            gm_status = 'good' if gm >= 40 else ('warn' if gm >= 20 else 'bad')
+            gm_note = ("High-margin business" if gm >= 40 else
+                       "Average margins" if gm >= 20 else "Thin margins — review COGS")
+            metrics.append(("Gross Margin", f"{gm:.1f}%", gm_note, gm_status))
+        else:
+            metrics.append(("Gross Margin", "N/A", "No revenue recorded", "bad"))
+
+        if total_revenue != 0:
+            nm = (net_income / total_revenue) * 100
+            nm_status = 'good' if nm >= 10 else ('warn' if nm >= 0 else 'bad')
+            nm_note = ("Healthy profitability" if nm >= 10 else
+                       "Slim net profit" if nm >= 0 else
+                       "Net loss — expenses exceed revenue")
+            metrics.append(("Net Margin", f"{nm:.1f}%", nm_note, nm_status))
+
+        if total_revenue != 0:
+            expr = (total_expenses / total_revenue) * 100
+            expr_status = 'good' if expr < 40 else ('warn' if expr < 70 else 'bad')
+            expr_note = ("Well-controlled expenses" if expr < 40 else
+                         "Moderate expense load" if expr < 70 else "High expense burden")
+            metrics.append(("Expense Ratio", f"{expr:.1f}%", expr_note, expr_status))
+
+        if total_revenue != 0 and total_cogs > 0:
+            cogsr = (total_cogs / total_revenue) * 100
+            cogsr_status = 'good' if cogsr < 50 else ('warn' if cogsr < 70 else 'bad')
+            metrics.append(("COGS Ratio", f"{cogsr:.1f}%",
+                             "Portion of revenue consumed by COGS", cogsr_status))
+
+        ni_status = 'good' if net_income > 0 else ('warn' if net_income == 0 else 'bad')
+        ni_note = ("Profitable period" if net_income > 0 else
+                   "Break-even" if net_income == 0 else "Loss recorded this period")
+        metrics.append(("Net Income", f"{net_income:,.0f}", ni_note, ni_status))
+
+        rev_status = 'good' if total_revenue > 0 else 'bad'
+        metrics.append(("Revenue Status", "Recorded" if total_revenue > 0 else "None",
+                         f"Total: {total_revenue:,.2f}", rev_status))
+        self.show_analysis(metrics)
+
+
+# ---------------------------------------------------------------------------
+# Validation panel
+# ---------------------------------------------------------------------------
+
+class ValidationPanel(QWidget):
+    ROW_STYLE = {
+        'error':   ("🔴", "#fdecea", "#c62828"),
+        'warning': ("⚠️",  "#fff8e6", "#e65100"),
+        'ok':      ("✅", "#e6f9f0", "#1b5e20"),
+        'info':    ("ℹ️",  "#e8eaf6", "#283593"),
+    }
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMaximumHeight(160)
+        self.setMinimumHeight(100)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(4, 4, 4, 4)
+        root.setSpacing(4)
+
+        header_row = QHBoxLayout()
+        header = QLabel("🔍  Validation & Error Detection")
+        header.setStyleSheet("font-size:11px; font-weight:700; color:#2d3a5e; padding:2px 4px;")
+        header_row.addWidget(header)
+        self._summary_lbl = QLabel("")
+        self._summary_lbl.setStyleSheet("font-size:10px; color:#666; padding:2px 4px;")
+        header_row.addStretch()
+        header_row.addWidget(self._summary_lbl)
+        root.addLayout(header_row)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFrameShadow(QFrame.Sunken)
+        root.addWidget(sep)
+
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._inner = QWidget()
+        self._inner_layout = QVBoxLayout(self._inner)
+        self._inner_layout.setSpacing(2)
+        self._inner_layout.setContentsMargins(0, 0, 0, 0)
+        self._inner_layout.addStretch()
+        self._scroll.setWidget(self._inner)
+        root.addWidget(self._scroll)
+        self._show_idle()
+
+    def _show_idle(self):
+        lbl = QLabel("  No statement generated yet. Validation will appear here.")
+        lbl.setStyleSheet("color:#aaa; font-size:10px; padding:4px;")
+        self._inner_layout.insertWidget(0, lbl)
+
+    def _clear(self):
+        while self._inner_layout.count() > 1:
+            item = self._inner_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+    def _add_row(self, level: str, message: str):
+        icon, bg, fg = self.ROW_STYLE.get(level, self.ROW_STYLE['info'])
+        row = QLabel(f"  {icon}  {message}")
+        row.setStyleSheet(
+            f"background:{bg}; color:{fg}; font-size:10px; font-weight:500;"
+            f"border-radius:4px; padding:3px 6px;"
+        )
+        self._inner_layout.insertWidget(self._inner_layout.count() - 1, row)
+
+    def run_validation(self, trial_balance: list, stmt_type: str,
+                       total_assets=0, total_liabilities=0, total_equity=0,
+                       net_income=0, total_revenue=0, total_expenses=0):
+        self._clear()
+        issues = {'error': 0, 'warning': 0, 'ok': 0}
+        codes_seen = {}
+        asset_codes, liab_codes, eq_codes, rev_codes, exp_codes = [], [], [], [], []
+
+        for e in trial_balance:
+            code   = e['account_code']
+            desc   = e['account_description']
+            amount = e['amount']
+            nb     = e.get('normal_balance', 'Debit')
+            suffix = code.rsplit('-', 1)[-1] if '-' in code else code
+            first  = suffix[0] if suffix else ''
+
+            if code in codes_seen:
+                self._add_row('error', f"Duplicate account code: {code} ({desc})")
+                issues['error'] += 1
+            codes_seen[code] = True
+
+            if first == '1':   asset_codes.append((code, desc, amount, nb))
+            elif first == '2': liab_codes.append((code, desc, amount, nb))
+            elif first == '3': eq_codes.append((code, desc, amount, nb))
+            elif first == '4': rev_codes.append((code, desc, amount, nb))
+            elif first in ('5','6','7','8','9'): exp_codes.append((code, desc, amount, nb))
+            else:
+                self._add_row('warning', f"Unrecognised account range: {code} ({desc})")
+                issues['warning'] += 1
+
+            if first == '1' and nb == 'Debit' and amount < -0.01:
+                self._add_row('warning', f"Abnormal credit balance on asset: {code} = {amount:,.2f}")
+                issues['warning'] += 1
+            if first == '2' and nb == 'Credit' and amount > 0.01:
+                self._add_row('warning', f"Abnormal debit balance on liability: {code} = {amount:,.2f}")
+                issues['warning'] += 1
+            if first == '4' and nb == 'Credit' and amount > 0.01:
+                self._add_row('warning', f"Abnormal debit balance on revenue: {code} = {amount:,.2f}")
+                issues['warning'] += 1
+
+        if stmt_type == 'position':
+            if not asset_codes:
+                self._add_row('error', "No asset accounts (1xx) found in trial balance")
+                issues['error'] += 1
+            if not liab_codes:
+                self._add_row('warning', "No liability accounts (2xx) — is this intentional?")
+                issues['warning'] += 1
+            if not eq_codes:
+                self._add_row('warning', "No equity accounts (3xx) found")
+                issues['warning'] += 1
+            diff = total_assets - (total_liabilities + total_equity)
+            if abs(diff) > 0.005:
+                self._add_row('error', f"Statement OUT OF BALANCE by {diff:,.2f}.")
+                issues['error'] += 1
+            else:
+                self._add_row('ok', "Statement is balanced (Assets = Liabilities + Equity)")
+                issues['ok'] += 1
+            if total_equity < 0:
+                self._add_row('warning', f"Negative equity ({total_equity:,.2f}) — possible insolvency risk")
+                issues['warning'] += 1
+
+        elif stmt_type == 'performance':
+            if not rev_codes:
+                self._add_row('error', "No revenue accounts (4xx) found")
+                issues['error'] += 1
+            if not exp_codes:
+                self._add_row('warning', "No expense accounts (5xx–9xx) found")
+                issues['warning'] += 1
+            if total_revenue == 0:
+                self._add_row('warning', "Zero total revenue recorded for the period")
+                issues['warning'] += 1
+            else:
+                self._add_row('ok', f"Revenue recorded: {total_revenue:,.2f}")
+                issues['ok'] += 1
+            if net_income < 0:
+                self._add_row('warning', f"Net loss of {abs(net_income):,.2f} — expenses exceed revenue")
+                issues['warning'] += 1
+            elif net_income > 0:
+                self._add_row('ok', f"Net income of {net_income:,.2f} recorded")
+                issues['ok'] += 1
+
+        parts = []
+        if issues['error']:   parts.append(f"🔴 {issues['error']} error{'s' if issues['error']>1 else ''}")
+        if issues['warning']: parts.append(f"⚠️ {issues['warning']} warning{'s' if issues['warning']>1 else ''}")
+        if issues['ok']:      parts.append(f"✅ {issues['ok']} passed")
+        self._summary_lbl.setText("  |  ".join(parts))
+
+
+# ---------------------------------------------------------------------------
+# Saved statements panel  — DB-BACKED
+# ---------------------------------------------------------------------------
+
+class SavedStatementsPanel(QWidget):
+    """Left sidebar listing saved statements (persisted to the SQLite DB)."""
+
+    def __init__(self, db_manager: DatabaseManager, parent=None):
+        super().__init__(parent)
+        self.db_manager = db_manager
+        self.setMinimumWidth(190)
+        self.setMaximumWidth(260)
+        self._entries: list[dict] = []
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(4, 0, 4, 0)
+        root.setSpacing(4)
+
+        header = QLabel("📁  Saved Statements")
+        header.setStyleSheet(
+            "font-size:12px; font-weight:700; color:#2d3a5e;"
+            "padding:6px 4px; border-bottom:2px solid #5c7cfa;"
+        )
+        root.addWidget(header)
+
+        self._list = QListWidget()
+        self._list.setAlternatingRowColors(True)
+        self._list.setStyleSheet(
+            "QListWidget { border:1px solid #dde; border-radius:4px; font-size:10px; }"
+            "QListWidget::item { padding:6px 4px; }"
+            "QListWidget::item:selected { background:#5c7cfa; color:white; }"
+        )
+        self._list.itemDoubleClicked.connect(self._load_selected)
+        root.addWidget(self._list)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(4)
+
+        self._load_btn = QPushButton("Load")
+        self._load_btn.setFixedHeight(28)
+        self._load_btn.setEnabled(False)
+        self._load_btn.clicked.connect(self._load_selected)
+
+        # Rename — qtawesome pencil icon
+        self._rename_btn = QPushButton()
+        self._rename_btn.setFixedSize(28, 28)
+        self._rename_btn.setEnabled(False)
+        self._rename_btn.setToolTip("Rename")
+        rename_icon = _qta_icon('mdi.pencil', color='#555555')
+        if not rename_icon.isNull():
+            self._rename_btn.setIcon(rename_icon)
+            self._rename_btn.setIconSize(QSize(16, 16))
+        else:
+            self._rename_btn.setText("✏")
+        self._rename_btn.clicked.connect(self._rename_selected)
+
+        # Delete — qtawesome delete icon (red)
+        self._delete_btn = QPushButton()
+        self._delete_btn.setFixedSize(28, 28)
+        self._delete_btn.setEnabled(False)
+        self._delete_btn.setToolTip("Delete")
+        delete_icon = _qta_icon('mdi.delete', color='#e53935')
+        if not delete_icon.isNull():
+            self._delete_btn.setIcon(delete_icon)
+            self._delete_btn.setIconSize(QSize(16, 16))
+        else:
+            self._delete_btn.setText("🗑")
+        self._delete_btn.clicked.connect(self._delete_selected)
+
+        btn_row.addWidget(self._load_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(self._rename_btn)
+        btn_row.addWidget(self._delete_btn)
+        root.addLayout(btn_row)
+
+        self._list.currentItemChanged.connect(self._on_selection_change)
+
+        self._count_lbl = QLabel("No saved statements")
+        self._count_lbl.setStyleSheet("font-size:9px; color:#aaa; padding:2px 4px;")
+        root.addWidget(self._count_lbl)
+
+        self.on_load_callback = None
+
+        # Populate from DB on startup
+        self._reload_from_db()
+
+    # ---------------------------------------------------------------- internal
+
+    def _reload_from_db(self):
+        self._list.clear()
+        self._entries = _db_load_all_statements(self.db_manager)
+        for entry in self._entries:
+            self._add_list_item(entry)
+        self._update_count()
+
+    def _add_list_item(self, entry: dict):
+        item = QListWidgetItem()
+        stmt_type = entry.get('stmt_type', entry.get('params', {}).get('type', ''))
+        type_icon = "📊" if stmt_type == 'position' else "📈"
+        ts = entry.get('timestamp', '')[:16]
+        item.setText(f"{type_icon} {entry['label']}\n  {ts}")
+        item.setData(Qt.UserRole, entry['id'])
+        self._list.addItem(item)
+
+    def _current_entry(self) -> dict | None:
+        item = self._list.currentItem()
+        if not item:
+            return None
+        stmt_id = item.data(Qt.UserRole)
+        for e in self._entries:
+            if e['id'] == stmt_id:
+                return e
+        return None
+
+    # ---------------------------------------------------------------- public
+
+    def save_statement(self, label: str, text: str, params: dict):
+        stmt_type = params.get('type', '')
+        new_id = _db_save_statement(self.db_manager, label, stmt_type, text, params)
+        self._reload_from_db()
+        # Select the new item
+        for i in range(self._list.count()):
+            if self._list.item(i).data(Qt.UserRole) == new_id:
+                self._list.setCurrentRow(i)
+                break
+
+    # ---------------------------------------------------------------- slots
+
+    def _on_selection_change(self, current, previous):
+        has = current is not None
+        self._load_btn.setEnabled(has)
+        self._rename_btn.setEnabled(has)
+        self._delete_btn.setEnabled(has)
+
+    def _load_selected(self):
+        entry = self._current_entry()
+        if entry and self.on_load_callback:
+            self.on_load_callback(entry)
+
+    def _rename_selected(self):
+        entry = self._current_entry()
+        if not entry:
+            return
+        new_label, ok = QInputDialog.getText(
+            self, "Rename Statement", "New name:", text=entry['label'])
+        if ok and new_label.strip():
+            _db_rename_statement(self.db_manager, entry['id'], new_label.strip())
+            self._reload_from_db()
+
+    def _delete_selected(self):
+        entry = self._current_entry()
+        if not entry:
+            return
+        reply = QMessageBox.question(
+            self, "Delete Statement",
+            f"Delete '{entry['label']}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            _db_delete_statement(self.db_manager, entry['id'])
+            self._reload_from_db()
+
+    def _update_count(self):
+        n = len(self._entries)
+        self._count_lbl.setText(
+            f"{n} statement{'s' if n != 1 else ''} saved" if n else "No saved statements")
+
+
+# ---------------------------------------------------------------------------
+# Main widget
+# ---------------------------------------------------------------------------
+
+class FinancialStatementsWidget(QWidget):
+
+    def __init__(self, db_manager: DatabaseManager):
+        super().__init__()
+        self.db_manager          = db_manager
+        self._current_text       = ""
+        self._current_title      = ""
+        self._current_structured = {}
+        self._current_tb         = []
+        self._current_params     = {}
+
+        # Ensure saved_statements table exists in DB
+        _ensure_saved_statements_table(db_manager)
+
+        self._setup_ui()
+        self._setup_shortcuts()
+
+    def _setup_ui(self):
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(6, 6, 6, 6)
+        root_layout.setSpacing(6)
+
+        title = QLabel("FINANCIAL STATEMENTS")
+        title.setProperty("class", "title")
+        title.setAlignment(Qt.AlignCenter)
+        root_layout.addWidget(title)
+
+        cfg_group  = QGroupBox("Company")
+        cfg_layout = QHBoxLayout()
+        cfg_layout.addWidget(QLabel("Company Name:"))
+        self.company_name_input = QLineEdit("ABC COMPANY")
+        self.company_name_input.setMaximumWidth(260)
+        cfg_layout.addWidget(self.company_name_input)
+        cfg_layout.addStretch()
+
+        self._save_btn = QPushButton("💾  Save Statement")
+        self._save_btn.setFixedHeight(34)
+        self._save_btn.setEnabled(False)
+        self._save_btn.clicked.connect(self._save_current)
+        cfg_layout.addWidget(self._save_btn)
+
+        self.generate_btn = QPushButton("⚙  Generate Statement…")
+        self.generate_btn.setFixedHeight(34)
+        self.generate_btn.clicked.connect(self._open_generate_dialog)
+        cfg_layout.addWidget(self.generate_btn)
+        cfg_group.setLayout(cfg_layout)
+        root_layout.addWidget(cfg_group)
+
+        h_splitter = QSplitter(Qt.Horizontal)
+        h_splitter.setChildrenCollapsible(False)
+
+        # Left – saved statements (DB-backed)
+        self._saved_panel = SavedStatementsPanel(self.db_manager)
+        self._saved_panel.on_load_callback = self._load_saved
+        h_splitter.addWidget(self._saved_panel)
+
+        # Centre – statement display
+        centre_widget = QWidget()
+        centre_layout = QVBoxLayout(centre_widget)
+        centre_layout.setContentsMargins(0, 0, 0, 0)
+        centre_layout.setSpacing(4)
+
+        self.display = QTextEdit()
+        self.display.setReadOnly(True)
+        _mono = QFont("Courier New", 10)
+        _mono.setStyleHint(QFont.StyleHint.Monospace)
+        _mono.setFixedPitch(True)
+        self.display.setFont(_mono)
+        self.display.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self.display.setStyleSheet(
+            "QTextEdit { font-family: 'Courier New'; font-size: 10pt; }"
+        )
+        self.display.document().setDefaultStyleSheet("")
+        self.display.setPlaceholderText(
+            "Click  ⚙  Generate Statement…  to produce a financial statement.")
+        centre_layout.addWidget(self.display)
+
+        bottom_row = QHBoxLayout()
+        bottom_row.addStretch()
+        self.print_btn = QPushButton("🖨  Print")
+        self.print_btn.setFixedHeight(32)
+        self.print_btn.setEnabled(False)
+        self.print_btn.clicked.connect(self._print_current)
+        self.pdf_btn = QPushButton("📄  Print as PDF")
+        self.pdf_btn.setFixedHeight(32)
+        self.pdf_btn.setEnabled(False)
+        self.pdf_btn.clicked.connect(self._pdf_current)
+        bottom_row.addWidget(self.print_btn)
+        bottom_row.addWidget(self.pdf_btn)
+        centre_layout.addLayout(bottom_row)
+
+        h_splitter.addWidget(centre_widget)
+
+        # Right – analysis
+        self._analysis_panel = AnalysisPanel()
+        h_splitter.addWidget(self._analysis_panel)
+
+        h_splitter.setStretchFactor(0, 1)
+        h_splitter.setStretchFactor(1, 4)
+        h_splitter.setStretchFactor(2, 2)
+
+        v_splitter = QSplitter(Qt.Vertical)
+        v_splitter.setChildrenCollapsible(False)
+        v_splitter.addWidget(h_splitter)
+
+        self._validation_panel = ValidationPanel()
+        v_splitter.addWidget(self._validation_panel)
+
+        v_splitter.setStretchFactor(0, 5)
+        v_splitter.setStretchFactor(1, 1)
+
+        root_layout.addWidget(v_splitter)
+
+    def _setup_shortcuts(self):
+        QShortcut(QKeySequence("Ctrl+G"), self).activated.connect(self._open_generate_dialog)
+        QShortcut(QKeySequence("Ctrl+P"), self).activated.connect(self._print_current)
+        QShortcut(QKeySequence("Ctrl+Shift+P"), self).activated.connect(self._pdf_current)
+        QShortcut(QKeySequence("Ctrl+S"), self).activated.connect(self._save_current)
+
+    # ------------------------------------------------------------------ flow
+
+    def _open_generate_dialog(self):
+        company = self.company_name_input.text().strip().upper() or "ABC COMPANY"
+        dlg = GenerateDialog(company, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._generate(dlg.get_params())
+
+    def _generate(self, params: dict):
+        ptype = params['type']
+
+        if ptype == 'position':
+            as_of = params['as_of_date']
+            tb    = self.db_manager.get_trial_balance(
+                        date_to=as_of.toString("MM/dd/yyyy"))
+            analysis_data, text, structured = self._build_position(
+                tb, params['name'], params['company_name'],
+                as_of, params.get('business_type', 'Sole Proprietorship'))
+            self._analysis_panel.analyze_position(analysis_data)
+        else:
+            from_d = params['from_date']
+            to_d   = params['to_date']
+            tb     = self.db_manager.get_trial_balance(
+                         date_from=from_d.toString("MM/dd/yyyy"),
+                         date_to=to_d.toString("MM/dd/yyyy"))
+            analysis_data, text, structured = self._build_performance(
+                tb, params['name'], params['company_name'], from_d, to_d)
+            self._analysis_panel.analyze_performance(analysis_data)
+
+        self.display.setPlainText(text)
+        self.print_btn.setEnabled(True)
+        self.pdf_btn.setEnabled(True)
+        self._save_btn.setEnabled(True)
+        self._current_text       = text
+        self._current_title      = params['name']
+        self._current_structured = structured
+        self._current_tb         = tb
+        self._current_params     = params
+
+        if ptype == 'position':
+            self._validation_panel.run_validation(
+                tb, 'position',
+                total_assets=analysis_data.get('total_assets', 0),
+                total_liabilities=analysis_data.get('total_liabilities', 0),
+                total_equity=analysis_data.get('total_equity', 0),
+                net_income=analysis_data.get('net_income', 0),
+            )
+        else:
+            self._validation_panel.run_validation(
+                tb, 'performance',
+                total_revenue=analysis_data.get('total_revenue', 0),
+                total_expenses=analysis_data.get('total_expenses', 0),
+                net_income=analysis_data.get('net_income', 0),
+            )
+
+    def _save_current(self):
+        if not self._current_text:
+            return
+        label, ok = QInputDialog.getText(
+            self, "Save Statement", "Label for this statement:",
+            text=self._current_title)
+        if ok and label.strip():
+            self._saved_panel.save_statement(
+                label.strip(), self._current_text, self._current_params)
+
+    def _load_saved(self, entry: dict):
+        self.display.setPlainText(entry['text'])
+        self._current_text   = entry['text']
+        self._current_title  = entry['label']
+        self._current_params = entry['params']
+        self.print_btn.setEnabled(True)
+        self.pdf_btn.setEnabled(True)
+        self._save_btn.setEnabled(True)
+        self._generate(entry['params'])
+
+    # ------------------------------------------------------------------ builders
+
+    @staticmethod
+    def _fmt_amt(v: float) -> str:
+        return f"{v:,.2f}"
+
+    def _build_position(self, trial_balance, stmt_name: str,
+                        company: str, as_of: QDate,
+                        business_type: str = 'Sole Proprietorship'):
+        BIZ_EQUITY_LABELS = {
+            'Sole Proprietorship': "Owner's Equity",
+            'Partnership':        "Partners' Equity",
+            'Corporation':        "Stockholders' Equity",
+        }
+        BIZ_NI_LABELS = {
+            'Sole Proprietorship': "Net Income (Loss)",
+            'Partnership':        "Net Income (Loss) - Current Period",
+            'Corporation':        "Net Income (Loss) for the Period",
+        }
+        equity_label = BIZ_EQUITY_LABELS.get(business_type, "Owner's Equity")
+        ni_label     = BIZ_NI_LABELS.get(business_type, "Net Income (Loss)")
+
+        assets      = []
+        liabilities = []
+        equity_adds = []
+        equity_deds = []
+        rev_total   = 0.0
+        exp_total   = 0.0
+
+        for e in trial_balance:
+            code   = e['account_code']
+            desc   = e['account_description']
+            amount = e['amount']
+            nb     = e.get('normal_balance', 'Debit')
+            suffix = code.rsplit('-', 1)[-1] if '-' in code else code
+            first  = suffix[0] if suffix else ''
+
+            if first == '1':
+                assets.append((code, desc, amount))
+            elif first == '2':
+                liabilities.append((code, desc, -amount))
+            elif first == '3':
+                if nb == 'Debit':
+                    equity_deds.append((code, desc, amount))
+                else:
+                    equity_adds.append((code, desc, -amount))
+            elif first == '4':
+                rev_total += abs(amount)
+            elif first in ('5', '6', '7', '8', '9'):
+                exp_total += amount
+
+        net_income        = rev_total - exp_total
+        total_assets      = sum(a[2] for a in assets)
+        total_liabilities = sum(a[2] for a in liabilities)
+        total_equity_adds = sum(a[2] for a in equity_adds)
+        total_equity_deds = sum(a[2] for a in equity_deds)
+        total_equity      = total_equity_adds - total_equity_deds + net_income
+        total_l_and_e     = total_liabilities + total_equity
+        diff              = total_assets - total_l_and_e
+
+        fa = self._fmt_amt
+        W, AM = 85, 15
+
+        def _line(left_text: str, amt_str: str = "") -> str:
+            if not amt_str:
+                return left_text
+            label_w = W - AM - 1
+            label = (left_text + " " * label_w)[:label_w]
+            return f"{label} {amt_str:>{AM}}"
+
+        def row(code, desc, amt_str, indent=0):
+            return _line(" " * indent + f"{code}  {desc}", amt_str)
+
+        def total_row(label, amt_str, indent=0):
+            return _line(" " * indent + label, amt_str)
+
+        lines = [
+            _centre(company, W),
+            _centre(stmt_name.upper(), W),
+            _centre(f"As of {_fmt_date(as_of)}", W),
+            "=" * W, "",
+            "ASSETS", "-" * W,
+        ]
+        for code, desc, amt in assets:
+            lines.append(row(code, desc, fa(amt)))
+        lines += ["-" * W, total_row("TOTAL ASSETS", fa(total_assets)), "",
+                  f"LIABILITIES AND {equity_label.upper()}", "-" * W, "  Liabilities:"]
+        for code, desc, amt in liabilities:
+            lines.append(row(code, desc, fa(amt), indent=4))
+        lines += ["-" * W, total_row("TOTAL LIABILITIES", fa(total_liabilities)), "",
+                  f"  {equity_label}:"]
+        for code, desc, amt in equity_adds:
+            lines.append(row(code, desc, fa(amt), indent=4))
+        for code, desc, amt in equity_deds:
+            lines.append(row(code, desc, fa(-amt), indent=4))
+        lines += [
+            _line("    " + ni_label, fa(net_income)),
+            "-" * W,
+            total_row(f"TOTAL {equity_label.upper()}", fa(total_equity)),
+            "",
+            total_row(f"TOTAL LIABILITIES AND {equity_label.upper()}", fa(total_l_and_e)),
+            "",
+        ]
+        if abs(diff) > 0.005:
+            lines += ["!" * W, f"  WARNING: OUT OF BALANCE by {diff:,.2f}", "!" * W, ""]
+        lines.append("=" * W)
+        screen_text = "\n".join(lines)
+
+        def _r(code, desc, amt, is_total=False, is_sub=False):
+            return (code, desc, fa(amt), is_total, is_sub)
+
+        sections = []
+        asset_rows = [_r(c, d, a) for c, d, a in assets]
+        asset_rows.append(_r("", "TOTAL ASSETS", total_assets, is_total=True))
+        sections.append({'title': 'ASSETS', 'rows': asset_rows})
+
+        liab_rows = [_r(c, d, a) for c, d, a in liabilities]
+        liab_rows.append(_r("", "TOTAL LIABILITIES", total_liabilities, is_total=True))
+        sections.append({'title': f"LIABILITIES AND {equity_label.upper()}",
+                         'sub_header': "Liabilities:", 'rows': liab_rows})
+
+        eq_rows = ([_r(c, d, a)  for c, d, a in equity_adds] +
+                   [_r(c, d, -a) for c, d, a in equity_deds] +
+                   [_r("", ni_label, net_income)])
+        eq_rows.append(_r("", f"TOTAL {equity_label.upper()}", total_equity, is_total=True))
+        sections.append({'sub_header': f"{equity_label}:", 'rows': eq_rows})
+
+        sections.append({'rows': [_r("", f"TOTAL LIABILITIES AND {equity_label.upper()}",
+                                     total_l_and_e, is_total=True)], 'spacer': False})
+
+        structured = {
+            'company':   company,
+            'stmt_name': stmt_name.upper(),
+            'subtitle':  f"As of {_fmt_date(as_of)}",
+            'sections':  sections,
+            'warning':   (f"OUT OF BALANCE by {diff:,.2f} — check entries"
+                          if abs(diff) > 0.005 else None),
+        }
+        analysis_data = {
+            'total_assets': total_assets, 'total_liabilities': total_liabilities,
+            'total_equity': total_equity, 'net_income': net_income,
+            'current_assets': total_assets, 'current_liabilities': total_liabilities,
+        }
+        return analysis_data, screen_text, structured
+
+    def _build_performance(self, trial_balance, stmt_name: str,
+                           company: str, from_d: QDate, to_d: QDate):
+        revenue  = []
+        cogs     = []
+        expenses = []
+
+        for e in trial_balance:
+            code   = e['account_code']
+            desc   = e['account_description']
+            amount = e['amount']
+            suffix = code.rsplit('-', 1)[-1] if '-' in code else code
+            first  = suffix[0] if suffix else ''
+            if first == '4':   revenue.append((code, desc, abs(amount)))
+            elif first == '5': cogs.append((code, desc, amount))
+            elif first in ('6', '7', '8', '9'): expenses.append((code, desc, amount))
+
+        total_revenue  = sum(r[2] for r in revenue)
+        total_cogs     = sum(c[2] for c in cogs)
+        gross_profit   = total_revenue - total_cogs
+        total_expenses = sum(ex[2] for ex in expenses)
+        net_income     = gross_profit - total_expenses
+        period_label   = _period_label(from_d, to_d)
+
+        fa = self._fmt_amt
+        W, AM = 85, 15
+
+        def _line(left_text: str, amt_str: str = "") -> str:
+            if not amt_str:
+                return left_text
+            label_w = W - AM - 1
+            label = (left_text + " " * label_w)[:label_w]
+            return f"{label} {amt_str:>{AM}}"
+
+        def row(code, desc, amt_str, indent=0):
+            return _line(" " * indent + f"{code}  {desc}", amt_str)
+
+        def total_row(label, amt_str, indent=0):
+            return _line(" " * indent + label, amt_str)
+
+        lines = [
+            _centre(company, W),
+            _centre(stmt_name.upper(), W),
+            _centre(period_label, W),
+            "=" * W, "",
+            "REVENUE", "-" * W,
+        ]
+        for code, desc, amt in revenue:
+            lines.append(row(code, desc, fa(amt)))
+        lines += ["-" * W, total_row("TOTAL REVENUE", fa(total_revenue)), ""]
+
+        if cogs:
+            lines += ["COST OF GOODS SOLD", "-" * W]
+            for code, desc, amt in cogs:
+                lines.append(row(code, desc, fa(amt)))
+            lines += ["-" * W, total_row("TOTAL COST OF GOODS SOLD", fa(total_cogs)),
+                      "", total_row("GROSS PROFIT", fa(gross_profit)), ""]
+
+        if expenses:
+            lines += ["OPERATING EXPENSES", "-" * W]
+            for code, desc, amt in expenses:
+                lines.append(row(code, desc, fa(amt)))
+            lines += ["-" * W, total_row("TOTAL OPERATING EXPENSES", fa(total_expenses)), ""]
+
+        lines += [total_row("NET INCOME (LOSS)", fa(net_income)), "", "=" * W]
+        screen_text = "\n".join(lines)
+
+        def _r(code, desc, amt, is_total=False, is_sub=False):
+            return (code, desc, fa(amt), is_total, is_sub)
+
+        sections = []
+        rev_rows = [_r(c, d, a) for c, d, a in revenue]
+        rev_rows.append(_r("", "TOTAL REVENUE", total_revenue, is_total=True))
+        sections.append({'title': 'REVENUE', 'rows': rev_rows})
+
+        if cogs:
+            cogs_rows = [_r(c, d, a) for c, d, a in cogs]
+            cogs_rows.append(_r("", "TOTAL COST OF GOODS SOLD", total_cogs, is_total=True))
+            cogs_rows.append(_r("", "GROSS PROFIT", gross_profit, is_sub=True))
+            sections.append({'title': 'COST OF GOODS SOLD', 'rows': cogs_rows})
+
+        if expenses:
+            exp_rows = [_r(c, d, a) for c, d, a in expenses]
+            exp_rows.append(_r("", "TOTAL OPERATING EXPENSES", total_expenses, is_total=True))
+            sections.append({'title': 'OPERATING EXPENSES', 'rows': exp_rows})
+
+        sections.append({'rows': [_r("", "NET INCOME (LOSS)", net_income, is_total=True)],
+                         'spacer': False})
+
+        structured = {
+            'company':   company,
+            'stmt_name': stmt_name.upper(),
+            'subtitle':  period_label,
+            'sections':  sections,
+            'warning':   None,
+        }
+        analysis_data = {
+            'total_revenue': total_revenue, 'total_cogs': total_cogs,
+            'gross_profit': gross_profit, 'total_expenses': total_expenses,
+            'net_income': net_income,
+        }
+        return analysis_data, screen_text, structured
+
+    # ------------------------------------------------------------------ print
+
+    def _print_current(self):
+        if not self.print_btn.isEnabled():
+            return
+        text       = self._current_text  or self.display.toPlainText()
+        title      = self._current_title or 'Financial Statement'
+        structured = getattr(self, '_current_structured', {})
+        PrintPreviewDialog(text, title, structured, self).exec()
+
+    def _pdf_current(self):
+        if not self.pdf_btn.isEnabled():
+            return
+        structured = getattr(self, '_current_structured', {})
+        title      = self._current_title or 'Financial Statement'
+        if not structured:
+            QMessageBox.warning(self, "No Statement", "Generate a statement first.")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save as PDF",
+            os.path.join(get_io_dir("Financial Statements"), "financial_statement.pdf"),
+            "PDF Files (*.pdf)"
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".pdf"):
+            path += ".pdf"
+        try:
+            _save_pdf_reportlab(structured, path, title)
+            QMessageBox.information(self, "PDF Saved", f"Saved to:\n{path}")
+        except Exception as exc:
+            QMessageBox.critical(self, "PDF Error", str(exc))
+
+    def load_data(self):
+        pass

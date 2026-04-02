@@ -1,9 +1,9 @@
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
                              QTableWidgetItem, QPushButton, QLabel, QDateEdit,
                              QHeaderView, QGroupBox, QLineEdit, QFileDialog, QMessageBox)
-from PyQt5.QtCore import Qt, QDate
+from PySide6.QtCore import Qt, QDate
 from database.db_manager import DatabaseManager
-from ui.search_utils import SearchFilter, add_month_combo
+from ui.utils.search_utils import SearchFilter, add_month_combo
 import os
 
 try:
@@ -82,9 +82,11 @@ class TrialBalanceWidget(QWidget):
         self.table.setHorizontalHeaderLabels(
             ["Account Code", "Account Description", "Amount"])
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        #self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.table.setColumnWidth(0, 150)   # Date
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.table.setColumnWidth(2, 150)   # Date
+        #self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setAlternatingRowColors(True)
         layout.addWidget(self.table)

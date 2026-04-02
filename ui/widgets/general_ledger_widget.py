@@ -1,11 +1,10 @@
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
                              QTableWidgetItem, QPushButton, QLabel, QComboBox,
-                             QHeaderView, QGroupBox, QDateEdit, QLineEdit,
-                             QShortcut, QFileDialog, QMessageBox)
-from PyQt5.QtCore import Qt, QDate
-from PyQt5.QtGui import QKeySequence, QFont, QColor
+                             QHeaderView, QGroupBox, QDateEdit, QLineEdit, QFileDialog, QMessageBox)
+from PySide6.QtCore import Qt, QDate
+from PySide6.QtGui import QKeySequence, QFont, QColor, QShortcut
 from database.db_manager import DatabaseManager
-from ui.search_utils import SearchFilter, add_month_combo
+from ui.utils.search_utils import SearchFilter, add_month_combo
 import os
 
 try:
@@ -18,6 +17,43 @@ except ImportError:
 
 MONTHS = ["January","February","March","April","May","June",
           "July","August","September","October","November","December"]
+
+# ---------------------------------------------------------------------------
+# Column width defaults (pixels) — change these to adjust default widths
+# ---------------------------------------------------------------------------
+
+# Single-account view: Date, Reference No., Particulars, Debit, Credit, Balance
+SINGLE_COL_WIDTHS = {
+    0: 100,   # Date
+    1: 145,   # Reference No.
+    2: None,  # Particulars — stretches to fill remaining space
+    3: 130,   # Debit
+    4: 130,   # Credit
+    5: 140,   # Balance
+}
+
+# All-accounts view: Account Code, Account Description, Debit, Credit, Balance
+ALL_COL_WIDTHS = {
+    0: 150,   # Account Code
+    1: None,  # Account Description — stretches to fill remaining space
+    2: 130,   # Debit
+    3: 130,   # Credit
+    4: 140,   # Balance
+}
+
+
+def _apply_col_widths(header: QHeaderView, widths: dict):
+    """
+    Apply column widths from a dict {col_index: pixels | None}.
+    None  → Interactive (user-resizable stretch column).
+    int   → Fixed pixel width, still user-resizable (Interactive mode).
+    """
+    for col, width in widths.items():
+        if width is None:
+            header.setSectionResizeMode(col, QHeaderView.Stretch)
+        else:
+            header.setSectionResizeMode(col, QHeaderView.Interactive)
+            header.resizeSection(col, width)
 
 
 class GeneralLedgerWidget(QWidget):
@@ -43,7 +79,7 @@ class GeneralLedgerWidget(QWidget):
         layout.addWidget(title)
 
         # ── Row 1: Search & Filter ─────────────────────────────────────────
-        search_group = QGroupBox("Search & Filter")
+        search_group = QGroupBox("Search && Filter")
         search_layout = QHBoxLayout()
 
         self.month_combo = add_month_combo(search_layout)
@@ -109,9 +145,11 @@ class GeneralLedgerWidget(QWidget):
         # ── Table ──────────────────────────────────────────────────────────
         self.table = QTableWidget()
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setAlternatingRowColors(True)
+        # Allow user to drag column borders to resize
+        self.table.horizontalHeader().setSectionsMovable(False)
+        self.table.horizontalHeader().setStretchLastSection(False)
         layout.addWidget(self.table)
 
         # ── Totals ─────────────────────────────────────────────────────────
@@ -222,8 +260,10 @@ class GeneralLedgerWidget(QWidget):
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(
             ["Date", "Reference No.", "Particulars", "Debit", "Credit", "Balance"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+
+        # Apply user-configurable column widths for single-account view
+        _apply_col_widths(self.table.horizontalHeader(), SINGLE_COL_WIDTHS)
+
         self.table.setRowCount(len(entries))
 
         running_balance = total_debit = total_credit = 0
@@ -255,10 +295,8 @@ class GeneralLedgerWidget(QWidget):
         self._update_single_totals_from_visible()
 
     def _update_single_totals_from_visible(self):
-        """Recompute totals and running balance from visible rows only."""
         normal_balance = self._current_normal
         running = total_dr = total_cr = 0.0
-        last_balance = 0.0
 
         for row in range(self.table.rowCount()):
             if self.table.isRowHidden(row):
@@ -271,8 +309,6 @@ class GeneralLedgerWidget(QWidget):
                 running += (cr - dr) if normal_balance == 'Credit' else (dr - cr)
                 total_dr += dr
                 total_cr += cr
-                last_balance = running
-                # Update balance cell to match filtered running balance
                 bal_item = QTableWidgetItem(f"{running:,.2f}")
                 bal_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 bal_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -283,7 +319,7 @@ class GeneralLedgerWidget(QWidget):
         self.totals_label.setText(
             f"Totals: Debit: {total_dr:,.2f} | "
             f"Credit: {total_cr:,.2f} | "
-            f"Balance: {last_balance:,.2f}")
+            f"Balance: {running:,.2f}")
 
     # ------------------------------------------------------------------ all accounts
 
@@ -295,8 +331,9 @@ class GeneralLedgerWidget(QWidget):
         self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels(
             ["Account Code", "Account Description", "Debit", "Credit", "Balance"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+
+        # Apply user-configurable column widths for all-accounts view
+        _apply_col_widths(self.table.horizontalHeader(), ALL_COL_WIDTHS)
 
         rows = []
         grand_debit = grand_credit = grand_balance = 0
@@ -382,11 +419,9 @@ class GeneralLedgerWidget(QWidget):
             QMessageBox.information(self, "Export Successful", f"Exported to:\n{path}")
 
     def _export_single(self, path: str) -> str:
-        """Export single-account GL in GL_SAMPLE format with monthly breakdown."""
         try:
             from datetime import datetime as _dt
 
-            # Collect only visible entries (respect current search/filter)
             visible_entries = []
             for row in range(self.table.rowCount()):
                 if self.table.isRowHidden(row):
@@ -409,7 +444,6 @@ class GeneralLedgerWidget(QWidget):
             ws = wb.active
             ws.title = "General Ledger"
 
-            # ── Styles ────────────────────────────────────────────────────
             hdr_font    = XLFont(name='Arial', bold=True, color='FFFFFF', size=11)
             hdr_fill    = PatternFill('solid', start_color='2F5496')
             hdr_align   = Alignment(horizontal='center', vertical='center', wrap_text=True)
@@ -422,13 +456,11 @@ class GeneralLedgerWidget(QWidget):
             border      = Border(left=thin, right=thin, top=thin, bottom=thin)
             r_align     = Alignment(horizontal='right',  vertical='center')
             l_align     = Alignment(horizontal='left',   vertical='center')
-            c_align     = Alignment(horizontal='center', vertical='center')
 
             COLS = ['DATE','ACCOUNT CODE','ACCOUNT DESCRIPTION',
                     'REFERENCE NO','PARTICULARS','DEBIT','CREDIT','BALANCE']
             WIDTHS = {1:14, 2:14, 3:28, 4:16, 5:36, 6:14, 7:14, 8:14}
 
-            # Title rows
             ws.merge_cells('A2:H2')
             ws['A2'].value = 'GENERAL LEDGER'
             ws['A2'].font  = XLFont(name='Arial', bold=True, size=14)
@@ -440,7 +472,6 @@ class GeneralLedgerWidget(QWidget):
             ws['A3'].font  = XLFont(name='Arial', italic=True, size=11)
             ws['A3'].alignment = Alignment(horizontal='left', vertical='center')
 
-            # Header row (row 5)
             HR = 5
             ws.row_dimensions[HR].height = 28
             for ci, h in enumerate(COLS, 1):
@@ -452,7 +483,6 @@ class GeneralLedgerWidget(QWidget):
                 ws.column_dimensions[get_column_letter(ci)].width = w
             ws.freeze_panes = 'A6'
 
-            # Group entries by month
             from collections import defaultdict
             months = defaultdict(list)
             for e in visible_entries:
@@ -470,13 +500,10 @@ class GeneralLedgerWidget(QWidget):
 
             for (year, month) in sorted(months.keys()):
                 month_entries = months[(year, month)]
-                month_name = MONTHS[month - 1].upper() if month > 0 else 'UNKNOWN'
                 import calendar
                 last_day = calendar.monthrange(year, month)[1]
-
                 beg_bal = running_balance
 
-                # Beginning Balance row
                 beg_date = f"{month:02d}/01/{year}"
                 row_vals = [beg_date, account_code, account_desc,
                             'Beginning Balance', '', '', '', f"{beg_bal:,.2f}"]
@@ -487,7 +514,6 @@ class GeneralLedgerWidget(QWidget):
                     cell.alignment = r_align if ci >= 6 else l_align
                 current_row += 1
 
-                # Detail rows
                 month_dr = month_cr = 0.0
                 for e in month_entries:
                     debit  = float(e.get('debit',  0) or 0)
@@ -511,7 +537,6 @@ class GeneralLedgerWidget(QWidget):
                         cell.alignment = r_align if ci >= 6 else l_align
                     current_row += 1
 
-                # Month Total row
                 end_date = f"{month:02d}/{last_day:02d}/{year}"
                 row_vals = [end_date, account_code, account_desc,
                             'MONTH TOTAL', '',
@@ -524,7 +549,6 @@ class GeneralLedgerWidget(QWidget):
                     cell.alignment = r_align if ci >= 6 else l_align
                 current_row += 1
 
-                # Ending Balance row
                 row_vals = [end_date, account_code, account_desc,
                             'ENDING BALANCE', '', '', '', f"{running_balance:,.2f}"]
                 ws.row_dimensions[current_row].height = 18
@@ -533,8 +557,6 @@ class GeneralLedgerWidget(QWidget):
                     cell.font = total_font; cell.fill = bal_fill; cell.border = border
                     cell.alignment = r_align if ci >= 6 else l_align
                 current_row += 1
-
-                # Blank separator
                 current_row += 1
 
             ws.auto_filter.ref = f'A{HR}:H{HR}'
@@ -544,7 +566,6 @@ class GeneralLedgerWidget(QWidget):
             return str(e)
 
     def _export_all(self, path: str) -> str:
-        """Export all-accounts summary (visible rows only)."""
         try:
             from datetime import datetime as _dt
             wb = Workbook()

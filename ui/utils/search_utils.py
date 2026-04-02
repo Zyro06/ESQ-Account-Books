@@ -28,8 +28,8 @@ The filter uses setRowHidden — it never rebuilds QTableWidgetItems, so it
 is O(n) in the number of rows rather than O(n * columns).
 """
 
-from PyQt5.QtCore import QDate, QTimer
-from PyQt5.QtWidgets import QTableWidget, QLineEdit, QLabel, QDateEdit, QComboBox
+from PySide6.QtCore import QDate, QTimer
+from PySide6.QtWidgets import QTableWidget, QLineEdit, QLabel, QDateEdit, QComboBox
 
 MONTHS = [
     "January", "February", "March", "April", "May", "June",
@@ -45,7 +45,7 @@ def add_month_combo(layout, label_text: str = "Month:") -> QComboBox:
         from PyQt5.QtWidgets import QLabel
         self.month_combo = add_month_combo(search_layout)
     """
-    from PyQt5.QtWidgets import QLabel
+    from PySide6.QtWidgets import QLabel
     lbl = QLabel(label_text)
     combo = QComboBox()
     combo.addItem("All Months")

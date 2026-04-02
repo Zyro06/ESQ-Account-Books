@@ -1,14 +1,13 @@
 import os
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
                              QTableWidgetItem, QPushButton, QLabel, QLineEdit,
                              QDialog, QFormLayout, QDialogButtonBox, QMessageBox,
-                             QHeaderView, QGroupBox, QShortcut, QComboBox, QFileDialog)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QKeySequence
+                             QHeaderView, QGroupBox, QComboBox, QFileDialog)
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from database.db_manager import DatabaseManager
 from resources.file_paths import get_io_dir, get_import_dir
-from ui.search_utils import SearchFilter
-
+from ui.utils.search_utils import SearchFilter
 
 class COADialog(QDialog):
     def __init__(self, parent=None, account_data=None):
@@ -68,7 +67,7 @@ class COAWidget(QWidget):
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
-        search_group = QGroupBox("Search & Filter")
+        search_group = QGroupBox("Search && Filter")
         search_layout = QHBoxLayout()
         search_layout.addWidget(QLabel("Search:"))
         self.search_input = QLineEdit()
@@ -155,7 +154,7 @@ class COAWidget(QWidget):
 
     def _add_account(self):
         dialog = COADialog(self)
-        if dialog.exec_():
+        if dialog.exec():
             data = dialog.get_data()
             if data['account_code'] and data['account_description']:
                 if self.db_manager.add_account(data):
@@ -179,7 +178,7 @@ class COAWidget(QWidget):
             'normal_balance':      nb_item.text() if nb_item else 'Debit',
         }
         dialog = COADialog(self, account_data)
-        if dialog.exec_():
+        if dialog.exec():
             data = dialog.get_data()
             if data['account_description']:
                 if self.db_manager.update_account(account_id, data):

@@ -1,19 +1,19 @@
 import os
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
                              QTableWidgetItem, QPushButton, QLabel, QLineEdit,
                              QDialog, QFormLayout, QDialogButtonBox, QMessageBox,
-                             QHeaderView, QGroupBox, QShortcut, QComboBox,
+                             QHeaderView, QGroupBox, QComboBox,
                              QFileDialog)
-from PyQt5.QtCore import Qt, QRegExp
-from PyQt5.QtGui import QKeySequence, QRegExpValidator
+from PySide6.QtCore import Qt, QRegularExpression
+from PySide6.QtGui import QKeySequence, QRegularExpressionValidator, QShortcut
 from resources.file_paths import get_import_dir, get_io_dir
-from ui.search_utils import SearchFilter
 from database.db_manager import DatabaseManager
+from utils.export_utils import export_alphalist_to_xls
+from utils.import_utils import import_alphalist_from_xls
+from ui.utils.search_utils import SearchFilter
 
 try:
-    from openpyxl import Workbook, load_workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from openpyxl.utils import get_column_letter
+    from openpyxl import load_workbook
     _OPENPYXL_OK = True
 except ImportError:
     _OPENPYXL_OK = False
@@ -68,7 +68,7 @@ class AlphalistDialog(QDialog):
 
         self.tin_input = QLineEdit()
         self.tin_input.setMaxLength(9)
-        tin_validator = QRegExpValidator(QRegExp(r'^\d{1,9}$'), self.tin_input)
+        tin_validator = QRegularExpressionValidator(QRegularExpression(r'^\d{1,9}$'), self.tin_input)
         self.tin_input.setValidator(tin_validator)
         if entry_data:
             raw = entry_data.get('tin', '') or ''
@@ -197,7 +197,7 @@ class AlphalistWidget(QWidget):
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
-        search_group  = QGroupBox('Search & Filter')
+        search_group  = QGroupBox('Search && Filter')
         search_layout = QHBoxLayout()
         search_layout.addWidget(QLabel('Show:'))
         self.list_type_combo = QComboBox()
@@ -314,7 +314,7 @@ class AlphalistWidget(QWidget):
 
     def _add_entry(self):
         dialog = AlphalistDialog(self)
-        if dialog.exec_():
+        if dialog.exec():
             data = dialog.get_data()
             if data['tin']:
                 if self.db_manager.add_alphalist(data):
@@ -344,7 +344,7 @@ class AlphalistWidget(QWidget):
             'address2':     self.table.item(row, 6).text(),
         }
         dialog = AlphalistDialog(self, entry_data)
-        if dialog.exec_():
+        if dialog.exec():
             data = dialog.get_data()
             if data['tin']:
                 if self.db_manager.update_alphalist(entry_id, data):
@@ -369,7 +369,7 @@ class AlphalistWidget(QWidget):
             'address2':     self.table.item(row, 6).text(),
         }
         dialog = AlphalistDialog(self, entry_data, is_copy=True)
-        if dialog.exec_():
+        if dialog.exec():
             data = dialog.get_data()
             if data['tin']:
                 if self.db_manager.add_alphalist(data):
@@ -459,128 +459,5 @@ class AlphalistWidget(QWidget):
             QMessageBox.information(self, 'Import Summary', msg)
 
 
-def export_alphalist_to_xls(entries: list, path: str, year: int = None):
-    from datetime import datetime as _dt
-    _year = year if year else _dt.now().year
-    HEADER_ROW = 5
-    DATA_START  = 6
-    try:
-        wb = Workbook(); ws = wb.active; ws.title = 'Alphalist'
-        hf  = Font(name='Arial', bold=True, color='FFFFFF', size=11)
-        hfl = PatternFill('solid', start_color='2F5496')
-        ha  = Alignment(horizontal='center', vertical='center', wrap_text=True)
-        cf  = Font(name='Arial', size=10)
-        cl  = Alignment(horizontal='left',   vertical='center')
-        cc  = Alignment(horizontal='center', vertical='center')
-        af  = PatternFill('solid', start_color='DCE6F1')
-        th  = Side(style='thin', color='B0B0B0')
-        bd  = Border(left=th, right=th, top=th, bottom=th)
-
-        ws.row_dimensions[2].height = 22
-        ws.merge_cells(f'A2:{get_column_letter(len(XLS_HEADERS))}2')
-        ws['A2'].value = 'ALPHALIST'
-        ws['A2'].font  = Font(name='Arial', bold=True, size=14)
-        ws['A2'].alignment = Alignment(horizontal='left', vertical='center')
-        ws.row_dimensions[3].height = 18
-        ws.merge_cells(f'A3:{get_column_letter(len(XLS_HEADERS))}3')
-        ws['A3'].value = f'For the Year {_year}'
-        ws['A3'].font  = Font(name='Arial', italic=True, size=11)
-        ws['A3'].alignment = Alignment(horizontal='left', vertical='center')
-
-        ws.row_dimensions[HEADER_ROW].height = 28
-        for ci, hdr in enumerate(XLS_HEADERS, 1):
-            cell = ws.cell(row=HEADER_ROW, column=ci, value=hdr)
-            cell.font = hf; cell.fill = hfl; cell.alignment = ha; cell.border = bd
-
-        for ri, entry in enumerate(entries):
-            row_idx = DATA_START + ri
-            ws.row_dimensions[row_idx].height = 18
-            fill = af if ri % 2 == 0 else None
-            for ci, key in enumerate(XLS_KEYS, 1):
-                val  = entry.get(key, '') or ''
-                cell = ws.cell(row=row_idx, column=ci, value=val)
-                cell.font      = cf
-                cell.alignment = cc if ci in (1, 2) else cl
-                cell.border    = bd
-                if fill: cell.fill = fill
-
-        widths = {1:16, 2:16, 3:28, 4:18, 5:18, 6:18, 7:30, 8:30}
-        for ci, w in widths.items():
-            ws.column_dimensions[get_column_letter(ci)].width = w
-        ws.freeze_panes = f'A{DATA_START}'
-        ws.auto_filter.ref = f'A{HEADER_ROW}:{get_column_letter(len(XLS_HEADERS))}{HEADER_ROW}'
-        wb.save(path)
-        return len(entries), ''
-    except Exception as exc:
-        return 0, str(exc)
-
-
-def import_alphalist_from_xls(path: str, db_manager) -> dict:
-    summary = {'imported': 0, 'skipped_duplicate': 0, 'skipped_invalid': 0, 'errors': []}
-    try:
-        wb = load_workbook(path, read_only=True, data_only=True)
-    except Exception:
-        raise RuntimeError(
-            f'Cannot open "{os.path.basename(path)}".\n\n'
-            'If this is an old .xls file, please re-save it as .xlsx first.')
-    ws = wb.active
-    HEADER_TO_KEY = {h.lower(): k for h, k in XLS_COLUMNS}
-    HEADER_TO_KEY.update({
-        'address 2': 'address2', 'address 1': 'address1',
-        'company': 'company_name', 'first': 'first_name',
-        'middle': 'middle_name', 'last': 'last_name',
-        'entry type': 'entry_type',
-    })
-    col_index = {}; data_start_row = None
-    for r_idx, row_vals in enumerate(
-            ws.iter_rows(min_row=1, max_row=10, values_only=True), start=1):
-        if not any(v and str(v).strip().upper() == 'TIN' for v in row_vals):
-            continue
-        for col_i, cell_val in enumerate(row_vals):
-            if cell_val is None: continue
-            norm = str(cell_val).strip().lower()
-            key  = HEADER_TO_KEY.get(norm)
-            if key: col_index[key] = col_i
-        data_start_row = r_idx + 1
-        break
-    if not col_index or 'tin' not in col_index:
-        raise ValueError("Could not find a header row with a 'TIN' column in the first 10 rows.")
-
-    def _val(row_vals, key: str) -> str:
-        idx = col_index.get(key)
-        if idx is None or idx >= len(row_vals): return ''
-        v = row_vals[idx]
-        return str(v).strip() if v is not None else ''
-
-    for row_num, row_vals in enumerate(
-            ws.iter_rows(min_row=data_start_row, values_only=True), start=data_start_row):
-        if all(v is None for v in row_vals): continue
-        raw_tin = _val(row_vals, 'tin')
-        tin     = format_tin(raw_tin)
-        if not tin:
-            summary['skipped_invalid'] += 1
-            summary['errors'].append(f'Row {row_num}: invalid TIN "{raw_tin}"')
-            continue
-
-        # Default to Customer&Vendor if no entry_type column or unrecognized value
-        entry_type = _val(row_vals, 'entry_type') or 'Customer&Vendor'
-        if entry_type not in ('Customer&Vendor', 'Customer', 'Vendor'):
-            entry_type = 'Customer&Vendor'
-
-        data = {
-            'tin':          tin,
-            'company_name': _val(row_vals, 'company_name'),
-            'first_name':   _val(row_vals, 'first_name'),
-            'middle_name':  _val(row_vals, 'middle_name'),
-            'last_name':    _val(row_vals, 'last_name'),
-            'address1':     _val(row_vals, 'address1'),
-            'address2':     _val(row_vals, 'address2'),
-            'entry_type':   entry_type,
-        }
-        if db_manager.add_alphalist(data):
-            summary['imported'] += 1
-        else:
-            summary['skipped_duplicate'] += 1
-            summary['errors'].append(f'Row {row_num}: duplicate TIN "{tin}" — skipped')
-    wb.close()
-    return summary
+# export_alphalist_to_xls lives in utils/export_utils.py
+# import_alphalist_from_xls lives in utils/import_utils.py

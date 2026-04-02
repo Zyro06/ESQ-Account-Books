@@ -10,13 +10,13 @@ First window shown on launch.  Lets the user either:
 import os
 import sys
 
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QMessageBox, QInputDialog,
     QLineEdit, QFileDialog, QFrame, QSizePolicy
 )
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 
 
 def _saves_dir() -> str:
@@ -48,6 +48,7 @@ class StartupDialog(QDialog):
 
         title = QLabel("ESQ Company Accounting System")
         title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("color: #2c3e50; font-size: 20pt; font-weight: bold;")
         f = QFont()
         f.setPointSize(16)
         f.setBold(True)
@@ -156,7 +157,7 @@ class StartupDialog(QDialog):
 
     def _ask_coa_source(self):
         dlg = _COASourceDialog(self)
-        result = dlg.exec_()
+        result = dlg.exec()
 
         if result == _COASourceDialog.USE_DEFAULT:
             self.coa_xlsx_path = None
